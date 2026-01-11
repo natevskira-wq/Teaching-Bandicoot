@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>وضع التركيز - المدرّس الشقي</title>
+    
+    <!-- Google Fonts: Cairo & Changa -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Changa:wght@600;800&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- LOAD CONNECTION FROM INIT.JS -->
+    <script src="init.js"></script>
+
+    <!-- Tailwind Config -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        cairo: ['Cairo', 'sans-serif'],
+                        game: ['Changa', 'sans-serif'],
+                    },
+                    colors: {
+                        'theme-lesson': '#2563EB',
+                        'theme-revision': '#9333EA',
+                        'theme-exam': '#DC2626',
+                    },
+                    animation: {
+                        'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'pop': 'popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards',
+                        'bounce-slow': 'bounce 3s infinite',
+                    },
+                    keyframes: {
+                        popIn: {
+                            '0%': { transform: 'scale(0.5)', opacity: '0' },
+                            '100%': { transform: 'scale(1)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Cairo', sans-serif;
+            background-color: #f9fafb;
+            overscroll-behavior: none;
+            user-select: none;
+        }
+        .timer-bar-fill { transition: width 1s linear, background-color 0.3s; }
+        #feedback-flash { pointer-events: none; transition: background-color 0.2s; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- 1. FEEDBACK OVERLAY -->
+    <div id="feedback-flash" class="fixed inset-0 z-40 bg-transparent"></div>
+
+    <!-- 2. THE HUD -->
+    <nav id="game-hud" class="fixed top-0 w-full z-50 text-white shadow-lg transition-colors duration-500 bg-gray-800">
+        <div class="max-w-4xl mx-auto px-4 h-16 flex justify-between items-center">
+            <!-- Quit -->
+            <button onclick="confirmQuit()" class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition active:scale-95">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+            <!-- Progress -->
+            <div class="flex flex-col items-center">
+                <span id="hud-title" class="text-xs opacity-75 font-bold">جاري التحميل...</span>
+                <span id="hud-progress" class="font-game text-xl font-bold tracking-widest">0 / 0</span>
+            </div>
+            <!-- Hearts -->
+            <div id="hearts-container" class="hidden flex gap-1 text-red-400">
+                <i class="fa-solid fa-heart animate-pulse"></i>
+                <i class="fa-solid fa-heart animate-pulse"></i>
+                <i class="fa-solid fa-heart animate-pulse"></i>
+            </div>
+        </div>
+        <!-- Timer -->
+        <div class="w-full h-1.5 bg-black/20">
+            <div id="timer-bar" class="h-full w-full bg-white/90 timer-bar-fill origin-right"></div>
+        </div>
+    </nav>
+
+    <!-- 3. MAIN STAGE -->
+    <main class="flex-grow pt-24 pb-10 px-4 flex flex-col items-center justify-center relative z-10">
+        <div id="loading-state" class="text-center">
+            <div class="w-20 h-20 border-4 border-gray-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4"></div>
+            <h2 class="text-xl font-bold text-gray-500">جاري تحضير الأسئلة...</h2>
+        </div>
+        <div id="game-stage" class="hidden w-full max-w-2xl">
+            <!-- Content Injected via JS -->
+        </div>
+    </main>
+
+    <!-- 4. VICTORY MODAL -->
+    <div id="victory-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center px-4">
+        <div class="absolute inset-0 bg-gray-900/90 backdrop-blur-sm transition-opacity"></div>
+        <div class="relative bg-white w-full max-w-sm rounded-3xl p-8 text-center shadow-2xl border-4 border-white transform scale-90 transition-all duration-300" id="victory-card">
+            <div id="confetti-container" class="absolute inset-0 pointer-events-none overflow-hidden rounded-3xl"></div>
+            
+            <h2 id="victory-title" class="text-3xl font-black text-gray-800 mb-2 font-game">أحسنت!</h2>
+            <p id="victory-subtitle" class="text-gray-500 font-bold text-sm mb-6">لقد أنهيت المرحلة بنجاح</p>
+
+            <div class="relative w-32 h-32 mx-auto mb-6 flex items-center justify-center">
+                <div class="absolute inset-0 bg-yellow-400/20 rounded-full animate-pulse filter blur-xl"></div>
+                <div id="victory-icon" class="relative text-8xl drop-shadow-lg filter animate-bounce-slow">🏆</div>
+                <div id="victory-grade" class="absolute -bottom-2 -right-2 bg-indigo-600 text-white font-black text-2xl w-12 h-12 flex items-center justify-center rounded-full border-4 border-white shadow-lg transform rotate-12">A</div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 mb-8">
+                <div class="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                    <div class="text-xs text-gray-400 font-bold">الدقة</div>
+                    <div id="victory-accuracy" class="text-xl font-black text-gray-800">100%</div>
+                </div>
+                <div class="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                    <div class="text-xs text-gray-400 font-bold">الجوائز</div>
+                    <div id="victory-loot-text" class="text-xl font-black text-gray-800">+3 ⭐</div>
+                </div>
+            </div>
+
+            <button onclick="exitDrill()" class="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-black py-4 rounded-2xl shadow-lg border-b-4 border-emerald-800 transform active:scale-95 active:border-b-0 active:translate-y-1 transition-all text-xl">
+                تابع المغامرة 🚀
+            </button>
+        </div>
+    </div>
+
+    <!-- 5. GAME LOGIC -->
+    <script type="module">
+        // 1. SUPABASE SETUP (Via init.js)
+        const supabase = window.supabaseClient;
+
+        // 2. STATE VARIABLES
+        window.currentDrillData = null; 
+        window.gameMode = 'lesson';     
+        
+        // Gameplay State
+        let links = [];             
+        let currentLinkIndex = 0;   
+        let currentPhaseIndex = 0;  // 0=Imprint, 1=Recog, 2=Prod
+        let lives = 3;              
+        let score = 0;
+        let mistakes = 0;
+        let stepTimer = null;       
+        let isPaused = false;
+        let currentUser = null;
+
+        // Audio Effects (Simple placeholders)
+        const sfxCorrect = new Audio('https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg');
+        const sfxWrong = new Audio('https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg');
+
+        // 3. INITIALIZATION
+        window.addEventListener('load', initDrill);
+
+        async function initDrill() {
+            // A. Auth Check
+            const userStr = localStorage.getItem('tb_user');
+            if (!userStr) { window.location.href = 'index.html'; return; }
+            currentUser = JSON.parse(userStr);
+
+            // B. URL Parser
+            const params = new URLSearchParams(window.location.search);
+            const lessonId = params.get('id');
+            if (!lessonId) { window.location.href = 'dashboard.html'; return; }
+
+            // C. Database Query
+            try {
+                const { data, error } = await supabase
+                    .from('tb_lessons')
+                    .select('*')
+                    .eq('id', lessonId)
+                    .single();
+
+                if (error || !data) throw new Error("Lesson load failed");
+
+                // D. Data Binding & Normalization
+                window.currentDrillData = data.content;
+                window.gameMode = data.type;
+                links = data.content.blocks || []; 
+
+                // Shuffle links if it's Revision or Exam for randomness
+                if (gameMode !== 'lesson') {
+                    links.sort(() => Math.random() - 0.5);
+                }
+
+                // Setup UI
+                setTheme(data.type, data.title);
+                document.getElementById('loading-state').classList.add('hidden');
+                document.getElementById('game-stage').classList.remove('hidden');
+
+                // Start Game Loop
+                renderStep();
+
+            } catch (err) {
+                console.error(err);
+                alert("حدث خطأ في تحميل البيانات.");
+                window.location.href = 'dashboard.html';
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 4. THE GAME LOOP (The Brain)
+        // ---------------------------------------------------------
+        
+        window.renderStep = () => {
+            // A. Check End Condition
+            if (currentLinkIndex >= links.length) {
+                finishDrill(); 
+                return;
+            }
+
+            const currentItem = links[currentLinkIndex];
+            const hudProgress = document.getElementById('hud-progress');
+            hudProgress.innerText = `${currentLinkIndex + 1} / ${links.length}`;
+
+            // Reset UI
+            resetTimer();
+            isPaused = false;
+
+            // B. Determine Phase based on Mode
+            let renderFunction = null;
+
+            if (gameMode === 'lesson') {
+                if (currentPhaseIndex === 0) renderFunction = renderImprint;
+                else if (currentPhaseIndex === 1) renderFunction = renderRecognition;
+                else renderFunction = renderProduction;
+            } 
+            else if (gameMode === 'revision') {
+                if (currentPhaseIndex === 0) renderFunction = renderRecognition;
+                else renderFunction = renderProduction;
+            } 
+            else { 
+                // Exam: Production Only
+                renderFunction = renderProduction;
+            }
+
+            // C. Execute Render
+            renderFunction(currentItem);
+        };
+
+        // ---------------------------------------------------------
+        // 5. PHASE RENDERERS (The UI)
+        // ---------------------------------------------------------
+
+        function renderImprint(item) {
+            // Flashcard Style
+            const stage = document.getElementById('game-stage');
+            stage.innerHTML = `
+                <div class="animate-pulse-fast bg-blue-50 p-8 rounded-3xl border-4 border-blue-200 text-center">
+                    <h2 class="text-sm font-bold text-gray-400 mb-2">تعلم الكلمة (حفظ)</h2>
+                    <div class="text-4xl font-black text-gray-800 mb-6 font-game">${item.q}</div>
+                    <div class="w-16 h-1 bg-blue-200 mx-auto mb-6 rounded-full"></div>
+                    <div class="text-3xl font-bold text-blue-600 mb-8">${item.a}</div>
+                    
+                    <button onclick="nextPhase()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg transform active:scale-95 transition text-xl">
+                        جاهز! 🧠
+                    </button>
+                </div>
+            `;
+        }
+
+        function renderRecognition(item) {
+            // Multiple Choice
+            const stage = document.getElementById('game-stage');
+            
+            // Generate Distractors
+            const allAnswers = links.map(l => l.a).filter(a => a !== item.a);
+            const distractors = allAnswers.sort(() => 0.5 - Math.random()).slice(0, 3);
+            const options = [...distractors, item.a].sort(() => 0.5 - Math.random());
+
+            let buttonsHtml = '';
+            options.forEach(opt => {
+                buttonsHtml += `
+                    <button onclick="validate('${opt.replace(/'/g, "\\'")}')" class="bg-white border-2 border-gray-200 hover:border-indigo-500 hover:bg-indigo-50 text-gray-800 font-bold py-4 rounded-xl shadow-sm transition text-lg h-20 leading-tight">
+                        ${opt}
+                    </button>
+                `;
+            });
+
+            stage.innerHTML = `
+                <div class="text-center w-full">
+                    <h2 class="text-sm font-bold text-gray-400 mb-4">اختر الإجابة الصحيحة</h2>
+                    <div class="text-4xl font-black text-gray-800 mb-8 font-game bg-white p-6 rounded-2xl shadow-sm border border-gray-100">${item.q}</div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                        ${buttonsHtml}
+                    </div>
+                </div>
+            `;
+            
+            startTimer(gameMode === 'revision' ? 8 : 15);
+        }
+
+        function renderProduction(item) {
+            // Typing
+            const stage = document.getElementById('game-stage');
+            const isExam = gameMode === 'exam';
+
+            stage.innerHTML = `
+                <div class="text-center w-full">
+                    <h2 class="text-sm font-bold text-gray-400 mb-4">${isExam ? 'اختبار (بدون مساعدة)' : 'اكتب الإجابة'}</h2>
+                    <div class="text-4xl font-black text-gray-800 mb-8 font-game bg-white p-6 rounded-2xl shadow-sm border border-gray-100">${item.q}</div>
+                    
+                    <input type="text" id="answer-input" autocomplete="off" placeholder="اكتب هنا..." 
+                        class="w-full text-center text-2xl font-bold p-4 rounded-xl border-4 border-gray-200 focus:border-indigo-500 outline-none mb-6"
+                        onkeydown="if(event.key === 'Enter') validate(this.value)"
+                    >
+                    
+                    <button onclick="validate(document.getElementById('answer-input').value)" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg transform active:scale-95 transition text-xl">
+                        تحقق ✅
+                    </button>
+                </div>
+            `;
+            
+            setTimeout(() => {
+                const input = document.getElementById('answer-input');
+                if(input) input.focus();
+            }, 100);
+            
+            startTimer(isExam ? 20 : 0);
+        }
+
+        // ---------------------------------------------------------
+        // 6. VALIDATION LOGIC
+        // ---------------------------------------------------------
+
+        window.validate = (input) => {
+            if (isPaused) return;
+            isPaused = true; 
+            stopTimer();
+
+            const currentItem = links[currentLinkIndex];
+            const cleanInput = (input || '').trim().toLowerCase();
+            const cleanAnswer = currentItem.a.trim().toLowerCase();
+
+            if (cleanInput === cleanAnswer) {
+                handleSuccess();
+            } else {
+                handleFail(cleanInput, cleanAnswer);
+            }
+        };
+
+        function handleSuccess() {
+            flashScreen('green');
+            // sfxCorrect.play().catch(e => {}); 
+            score += 10;
+            setTimeout(() => { nextPhase(); }, 800);
+        }
+
+        function handleFail(input, correct) {
+            flashScreen('red');
+            // sfxWrong.play().catch(e => {}); 
+            mistakes++;
+
+            if (gameMode === 'exam') {
+                lives--;
+                updateHearts();
+                if (lives <= 0) {
+                    triggerGameOver();
+                    return;
+                }
+                setTimeout(nextPhase, 1000);
+            } 
+            else {
+                showCorrection(links[currentLinkIndex].q, correct);
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 7. FLOW CONTROL
+        // ---------------------------------------------------------
+
+        window.nextPhase = () => {
+            let maxPhase = 0;
+            if (gameMode === 'lesson') maxPhase = 2;
+            else if (gameMode === 'revision') maxPhase = 1;
+
+            if (currentPhaseIndex < maxPhase) {
+                currentPhaseIndex++;
+            } else {
+                currentPhaseIndex = 0;
+                currentLinkIndex++;
+            }
+            renderStep();
+        };
+
+        function showCorrection(q, a) {
+            const stage = document.getElementById('game-stage');
+            stage.innerHTML = `
+                <div class="bg-red-50 p-6 rounded-3xl border-4 border-red-200 text-center animate-pulse">
+                    <h2 class="text-red-500 font-bold text-xl mb-2">إجابة خاطئة!</h2>
+                    <p class="text-gray-500 mb-4">الإجابة الصحيحة هي:</p>
+                    <div class="text-3xl font-black text-green-600 mb-6">${a}</div>
+                    
+                    <p class="text-sm text-gray-400 mb-2">اكتب الإجابة الصحيحة للمتابعة:</p>
+                    <input type="text" id="correction-input" autocomplete="off" 
+                        class="w-full text-center text-xl font-bold p-3 rounded-lg border-2 border-red-200 focus:border-green-500 outline-none"
+                    >
+                </div>
+            `;
+            
+            const input = document.getElementById('correction-input');
+            input.focus();
+            input.addEventListener('input', (e) => {
+                if (e.target.value.trim().toLowerCase() === a.toLowerCase()) {
+                    input.classList.add('bg-green-100', 'border-green-500');
+                    setTimeout(nextPhase, 500);
+                }
+            });
+        }
+
+        // ---------------------------------------------------------
+        // 8. HELPERS & UTILS
+        // ---------------------------------------------------------
+
+        function startTimer(seconds) {
+            const bar = document.getElementById('timer-bar');
+            
+            if (seconds <= 0) {
+                bar.style.width = '100%';
+                return;
+            }
+            
+            bar.style.transition = 'none';
+            bar.style.width = '100%';
+            
+            // Force reflow
+            void bar.offsetWidth;
+
+            bar.style.transition = `width ${seconds}s linear`;
+            bar.style.width = '0%';
+
+            stepTimer = setTimeout(() => {
+                validate("TIMEOUT_FAIL"); 
+            }, seconds * 1000);
+        }
+
+        function stopTimer() {
+            if (stepTimer) clearTimeout(stepTimer);
+            const bar = document.getElementById('timer-bar');
+            const computedStyle = window.getComputedStyle(bar);
+            const w = computedStyle.getPropertyValue('width');
+            bar.style.transition = 'none';
+            bar.style.width = w; // Freeze visual
+        }
+
+        function resetTimer() {
+            stopTimer();
+            document.getElementById('timer-bar').style.width = '100%';
+        }
+
+        function flashScreen(color) {
+            const f = document.getElementById('feedback-flash');
+            f.classList.remove('bg-transparent');
+            f.classList.add(color === 'green' ? 'bg-green-500/30' : 'bg-red-500/30');
+            setTimeout(() => {
+                f.className = 'fixed inset-0 z-40 bg-transparent transition-colors duration-300';
+            }, 300);
+        }
+
+        function updateHearts() {
+            const c = document.getElementById('hearts-container');
+            let h = '';
+            for(let i=0; i<3; i++) {
+                if(i < lives) h += '<i class="fa-solid fa-heart animate-pulse"></i>';
+                else h += '<i class="fa-regular fa-heart text-gray-500"></i>';
+            }
+            c.innerHTML = h;
+        }
+
+        function triggerGameOver() {
+            const s = document.getElementById('game-stage');
+            s.innerHTML = `
+                <div class="text-center">
+                    <div class="text-6xl mb-4">💀</div>
+                    <h1 class="text-3xl font-black text-gray-800 mb-2">انتهت اللعبة!</h1>
+                    <p class="text-gray-500 mb-6">لقد نفذت جميع محاولاتك.</p>
+                    <button onclick="window.location.href='warp.html'" class="bg-gray-800 text-white font-bold py-3 px-8 rounded-xl hover:bg-black transition">
+                        حاول مرة أخرى
+                    </button>
+                </div>
+            `;
+        }
+
+        // 9. VICTORY & SAVE LOGIC
+        window.finishDrill = async () => {
+            const totalQuestions = links.length;
+            const accuracy = totalQuestions > 0 ? Math.round(((totalQuestions - mistakes) / totalQuestions) * 100) : 0;
+
+            let earnedStars = 0, earnedCrystals = 0, earnedGems = 0, passed = false;
+
+            if (gameMode === 'lesson') {
+                if (accuracy >= 50) passed = true;
+                if (accuracy >= 90) earnedStars = 3;
+                else if (accuracy >= 75) earnedStars = 2;
+                else if (accuracy >= 50) earnedStars = 1;
+            } else if (gameMode === 'revision') {
+                if (accuracy >= 80) { passed = true; earnedCrystals = 1; }
+            } else if (gameMode === 'exam' || gameMode === 'boss') {
+                if (accuracy >= 90 && lives > 0) { passed = true; earnedGems = 1; }
+            }
+
+            const rewards = { stars: earnedStars, crystals: earnedCrystals, gems: earnedGems, score: accuracy };
+            showVictoryModal(passed, accuracy, rewards);
+
+            if (passed) await saveProgress(rewards);
+        };
+
+        async function saveProgress(newRewards) {
+            const params = new URLSearchParams(window.location.search);
+            const lessonId = params.get('id');
+
+            try {
+                const { data: existing, error: fetchError } = await supabase.from('tb_progress').select('*')
+                    .eq('user_id', currentUser.id).eq('lesson_id', lessonId).maybeSingle();
+                if (fetchError) throw fetchError;
+
+                let finalStars = newRewards.stars, finalCrystals = newRewards.crystals, finalGems = newRewards.gems, finalScore = newRewards.score;
+
+                if (existing) {
+                    finalStars = Math.max(existing.stars || 0, newRewards.stars);
+                    finalCrystals = Math.max(existing.crystals || 0, newRewards.crystals);
+                    finalGems = Math.max(existing.gems || 0, newRewards.gems);
+                    finalScore = Math.max(existing.score || 0, newRewards.score);
+                }
+
+                const payload = {
+                    user_id: currentUser.id, lesson_id: lessonId,
+                    score: finalScore, stars: finalStars, crystals: finalCrystals, gems: finalGems,
+                    completed_at: new Date().toISOString()
+                };
+
+                const { error: saveError } = await supabase.from('tb_progress').upsert(payload, { onConflict: 'user_id,lesson_id' });
+                if (saveError) throw saveError;
+                console.log("Saved ✅");
+            } catch (err) { console.error("Save Error:", err); }
+        }
+
+        // 10. UI RENDERERS (Victory)
+        function showVictoryModal(passed, accuracy, rewards) {
+            const modal = document.getElementById('victory-modal');
+            const title = document.getElementById('victory-title');
+            const subtitle = document.getElementById('victory-subtitle');
+            const icon = document.getElementById('victory-icon');
+            const gradeBadge = document.getElementById('victory-grade');
+            const lootText = document.getElementById('victory-loot-text');
+            const accText = document.getElementById('victory-accuracy');
+
+            modal.classList.remove('hidden');
+            document.getElementById('victory-card').classList.add('animate-pop');
+
+            if (passed) {
+                title.innerText = "أحسنت يا بطل!";
+                title.className = "text-3xl font-black text-green-600 mb-2 font-game";
+                subtitle.innerText = "لقد أتممت المهمة بنجاح";
+            } else {
+                title.innerText = "حاول مرة أخرى";
+                title.className = "text-3xl font-black text-red-500 mb-2 font-game";
+                subtitle.innerText = "أنت قريب جداً، لا تستسلم!";
+            }
+
+            let grade = 'F', gradeColor = 'bg-red-500';
+            if (accuracy >= 95) { grade = 'S'; gradeColor = 'bg-yellow-500'; }
+            else if (accuracy >= 85) { grade = 'A'; gradeColor = 'bg-green-500'; }
+            else if (accuracy >= 70) { grade = 'B'; gradeColor = 'bg-blue-500'; }
+            else if (accuracy >= 50) { grade = 'C'; gradeColor = 'bg-orange-500'; }
+            gradeBadge.innerText = grade;
+            gradeBadge.className = `absolute -bottom-2 -right-2 ${gradeColor} text-white font-black text-2xl w-12 h-12 flex items-center justify-center rounded-full border-4 border-white shadow-lg transform rotate-12`;
+
+            if (!passed) {
+                icon.innerText = "💔"; lootText.innerText = "لا توجد جوائز";
+            } else {
+                if (rewards.stars > 0) { icon.innerText = "⭐"; lootText.innerText = `+${rewards.stars} نجوم`; lootText.className = "text-xl font-black text-yellow-500"; }
+                else if (rewards.crystals > 0) { icon.innerText = "🔮"; lootText.innerText = `+${rewards.crystals} كريستال`; lootText.className = "text-xl font-black text-purple-500"; }
+                else if (rewards.gems > 0) { icon.innerText = "💎"; lootText.innerText = `+${rewards.gems} جوهرة`; lootText.className = "text-xl font-black text-emerald-500"; }
+                else { icon.innerText = "✅"; lootText.innerText = "مكتمل"; }
+            }
+            document.getElementById('victory-accuracy').innerText = `${accuracy}%`;
+            if (passed) createConfetti();
+        }
+
+        function createConfetti() {
+            const colors = ['#f1c40f', '#e74c3c', '#3498db', '#9b59b6', '#2ecc71'];
+            const container = document.getElementById('victory-card');
+            for (let i = 0; i < 30; i++) {
+                const c = document.createElement('div');
+                c.style.cssText = `position:absolute;width:8px;height:8px;border-radius:50%;z-index:0;left:${Math.random()*100}%;top:-10px;background-color:${colors[Math.floor(Math.random()*colors.length)]};transition:top ${Math.random()*2+1}s ease-in, opacity ${Math.random()*2+1}s ease-in`;
+                container.appendChild(c);
+                setTimeout(() => { c.style.top = '120%'; c.style.opacity = '0'; }, 50);
+                setTimeout(() => c.remove(), 3000);
+            }
+        }
+
+        window.exitDrill = () => {
+            if (document.referrer && document.referrer.includes('warp.html')) window.history.back();
+            else window.location.href = 'warp.html';
+        };
+
+        function setTheme(mode, title) {
+            const h = document.getElementById('game-hud');
+            const ht = document.getElementById('hearts-container');
+            document.getElementById('hud-title').innerText = title;
+            h.classList.remove('bg-gray-800', 'bg-blue-600', 'bg-purple-600', 'bg-red-600');
+            ht.classList.add('hidden');
+            if (mode === 'lesson') h.classList.add('bg-blue-600');
+            else if (mode === 'revision') h.classList.add('bg-purple-600');
+            else { h.classList.add('bg-red-600'); ht.classList.remove('hidden'); updateHearts(); }
+        }
+        
+        window.confirmQuit = () => { if (confirm("هل أنت متأكد من الخروج؟")) window.location.href = 'warp.html'; };
+    </script>
+</body>
+</html>

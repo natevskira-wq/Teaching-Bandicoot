@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>لوحة الطالب - المدرّس الشقي</title>
+    
+    <!-- Google Fonts: Cairo & Changa -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Changa:wght@600;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- LOAD CONNECTION FROM INIT.JS -->
+    <script src="init.js"></script>
+
+    <!-- Tailwind Configuration for Game UI -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        cairo: ['Cairo', 'sans-serif'],
+                        game: ['Changa', 'sans-serif'],
+                    },
+                    colors: {
+                        hud: { bg: '#2d3436', accent: '#6c5ce7' },
+                        currency: { star: '#f1c40f', crystal: '#a29bfe', gem: '#00cec9' }
+                    },
+                    boxShadow: {
+                        'game': '0 4px 0 rgba(0,0,0,0.2)',
+                        'game-hover': '0 2px 0 rgba(0,0,0,0.2)',
+                    },
+                    animation: {
+                        'bounce-slow': 'bounce 3s infinite',
+                        'float': 'float 4s ease-in-out infinite',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-5px)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Cairo', sans-serif;
+            background-color: #f3f4f6;
+            background-image: radial-gradient(#cbd5e1 2px, transparent 2px);
+            background-size: 24px 24px;
+            overscroll-behavior-y: none;
+        }
+        .counter { transition: all 0.5s ease-out; }
+        
+        /* Custom Scrollbar for Modal */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #c7d2fe; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #818cf8; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen pb-20">
+
+    <!-- 1. THE HUD (Heads-Up Display) -->
+    <nav class="fixed top-0 left-0 right-0 z-50 bg-gray-900 text-white shadow-2xl border-b-4 border-gray-800">
+        <div class="max-w-7xl mx-auto px-2 py-2 flex justify-between items-center h-20">
+            
+            <!-- LEFT: Avatar & Identity -->
+            <div class="flex items-center gap-3 bg-gray-800 pr-1 pl-4 py-1 rounded-full border-2 border-gray-700 shadow-game">
+                <div class="relative">
+                    <div class="w-12 h-12 rounded-full bg-indigo-500 overflow-hidden border-2 border-white shadow-inner animate-float">
+                        <img id="hudAvatar" src="" alt="Avatar" class="w-full h-full object-cover">
+                    </div>
+                    <div class="absolute -bottom-1 -right-1 bg-red-500 text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full border border-white">1</div>
+                </div>
+                <div class="flex flex-col">
+                    <span id="hudName" class="font-game font-bold text-sm tracking-wide text-yellow-400 leading-tight">...</span>
+                    <span class="text-[10px] text-gray-400 font-bold">طالب مجتهد</span>
+                </div>
+            </div>
+
+            <!-- RIGHT: The Wallet & Leaderboard -->
+            <div class="flex items-center gap-2 md:gap-4">
+                
+                <!-- LEADERBOARD TRIGGER BUTTON -->
+                <button onclick="toggleLeaderboard(true)" class="mr-2 md:mr-4 transform transition hover:scale-110 active:scale-95 group relative">
+                    <div class="bg-gradient-to-b from-yellow-400 to-orange-500 w-12 h-12 rounded-xl border-2 border-white shadow-game flex items-center justify-center">
+                        <span class="text-2xl filter drop-shadow-sm">🏆</span>
+                    </div>
+                    <span class="absolute -bottom-2 left-1/2 transform -translate-x-1/2 bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full border border-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                        المتصدرون
+                    </span>
+                </button>
+
+                <!-- Stars -->
+                <div class="flex flex-col items-center relative group">
+                    <div class="bg-gray-800 px-3 py-1 rounded-xl border border-gray-700 shadow-game flex items-center gap-1.5 min-w-[70px] justify-center">
+                        <span class="text-xl filter drop-shadow-md">⭐</span>
+                        <span id="countStars" class="font-game font-bold text-lg text-yellow-400 counter">0</span>
+                    </div>
+                    <span class="absolute -bottom-8 bg-black text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition">نجوم</span>
+                </div>
+
+                <!-- Crystals -->
+                <div class="flex flex-col items-center relative group">
+                    <div class="bg-gray-800 px-3 py-1 rounded-xl border border-gray-700 shadow-game flex items-center gap-1.5 min-w-[70px] justify-center">
+                        <span class="text-xl filter drop-shadow-md">🔮</span>
+                        <span id="countCrystals" class="font-game font-bold text-lg text-purple-400 counter">0</span>
+                    </div>
+                    <span class="absolute -bottom-8 bg-black text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition">كريستال</span>
+                </div>
+
+                <!-- Gems -->
+                <div class="flex flex-col items-center relative group">
+                    <div class="bg-gray-800 px-3 py-1 rounded-xl border border-gray-700 shadow-game flex items-center gap-1.5 min-w-[70px] justify-center">
+                        <span class="text-xl filter drop-shadow-md">💎</span>
+                        <span id="countGems" class="font-game font-bold text-lg text-emerald-400 counter">0</span>
+                    </div>
+                    <span class="absolute -bottom-8 bg-black text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition">جواهر</span>
+                </div>
+
+            </div>
+        </div>
+    </nav>
+
+    <!-- 2. MAIN CONTAINER (The Warp Gate) -->
+    <main id="app-container" class="pt-28 pb-10 px-4 max-w-7xl mx-auto min-h-screen flex flex-col items-center justify-center">
+        
+        <!-- THE WARP GATE (Navigation Card) -->
+        <div id="warp-gate" class="hidden w-full max-w-lg bg-white rounded-3xl shadow-2xl border-4 border-white relative overflow-hidden transform transition-all duration-500 opacity-0 translate-y-10">
+            
+            <!-- Decorative Header -->
+            <div class="bg-indigo-600 h-32 absolute top-0 left-0 w-full z-0">
+                <div class="opacity-20 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
+            </div>
+
+            <!-- Content -->
+            <div class="relative z-10 px-6 pb-8 pt-6">
+                <!-- Icon -->
+                <div class="flex justify-center mb-4">
+                    <div class="w-20 h-20 bg-yellow-400 rounded-full border-4 border-white shadow-lg flex items-center justify-center text-4xl animate-bounce-slow">
+                        🚀
+                    </div>
+                </div>
+
+                <!-- Title -->
+                <div class="text-center mb-8">
+                    <h2 class="text-2xl font-black text-gray-800 font-game mb-1">ابدأ مغامرتك</h2>
+                    <p class="text-indigo-100 text-sm font-bold bg-indigo-500 inline-block px-3 py-1 rounded-full">اختر مسارك الدراسي</p>
+                </div>
+
+                <!-- Form -->
+                <div class="space-y-5">
+                    <!-- Grade -->
+                    <div class="relative group">
+                        <label class="block text-xs font-bold text-gray-500 mb-1 mr-1">المرحلة الدراسية</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-xl">🎓</div>
+                            <select id="select-grade" class="appearance-none w-full bg-gray-50 border-2 border-gray-200 text-gray-800 font-bold py-3 pr-10 pl-4 rounded-xl focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors cursor-pointer">
+                                <option value="" disabled selected>اختر الصف...</option>
+                            </select>
+                            <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400 text-xs">▼</div>
+                        </div>
+                    </div>
+
+                    <!-- Term -->
+                    <div class="relative group">
+                        <label class="block text-xs font-bold text-gray-500 mb-1 mr-1">الترم</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-xl">📅</div>
+                            <select id="select-term" class="appearance-none w-full bg-gray-50 border-2 border-gray-200 text-gray-800 font-bold py-3 pr-10 pl-4 rounded-xl focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors cursor-pointer">
+                                <option value="" disabled selected>اختر الترم...</option>
+                            </select>
+                            <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400 text-xs">▼</div>
+                        </div>
+                    </div>
+
+                    <!-- Subject -->
+                    <div class="relative group">
+                        <label class="block text-xs font-bold text-gray-500 mb-1 mr-1">المادة</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-xl">📚</div>
+                            <select id="select-subject" class="appearance-none w-full bg-gray-50 border-2 border-gray-200 text-gray-800 font-bold py-3 pr-10 pl-4 rounded-xl focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors cursor-pointer">
+                                <option value="" disabled selected>اختر المادة...</option>
+                            </select>
+                            <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400 text-xs">▼</div>
+                        </div>
+                    </div>
+
+                    <!-- Action Button -->
+                    <button onclick="attemptWarp()" class="w-full mt-6 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-black text-xl py-4 rounded-2xl shadow-game border-b-4 border-indigo-800 transform active:scale-95 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center gap-3">
+                        <span>انطلق</span>
+                        <span class="animate-pulse">⚡</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- 3. LEADERBOARD MODAL -->
+    <div id="leaderboard-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center px-4">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onclick="toggleLeaderboard(false)"></div>
+        <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden relative transform transition-all scale-100 border-4 border-indigo-500">
+            <div class="bg-indigo-600 p-4 text-center relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+                <h2 class="text-2xl font-game font-bold text-white relative z-10 drop-shadow-md">🏆 لوحة الشرف</h2>
+                <button onclick="toggleLeaderboard(false)" class="absolute top-4 left-4 text-indigo-200 hover:text-white font-bold text-xl z-20">✕</button>
+            </div>
+            <div class="flex p-2 bg-indigo-50 gap-2">
+                <button onclick="switchLeaderboardTab('top10')" id="tab-top10" class="flex-1 py-2 rounded-xl font-bold text-sm transition-all bg-indigo-500 text-white shadow-game-hover">🔥 أعلى 10</button>
+                <button onclick="switchLeaderboardTab('me')" id="tab-me" class="flex-1 py-2 rounded-xl font-bold text-sm transition-all bg-white text-indigo-500 border-2 border-transparent hover:border-indigo-200">📍 ترتيبي</button>
+            </div>
+            <div id="leaderboard-list" class="h-[400px] overflow-y-auto p-4 space-y-3 bg-gray-50 custom-scrollbar">
+                <div class="text-center text-gray-400 py-10">جاري تحميل الأبطال...</div>
+            </div>
+            <div class="bg-gray-900 p-3 flex justify-between items-center text-white text-xs font-bold border-t-4 border-indigo-500">
+                <span>نقاطك الحالية:</span>
+                <span class="text-yellow-400 text-lg" id="lb-my-score">0</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. LOCKED CONTENT MODAL -->
+    <div id="locked-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center px-4">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick="closeLockedModal()"></div>
+        <div class="bg-white w-full max-w-sm rounded-3xl p-6 text-center relative z-10 animate-bounce-slow shadow-2xl border-4 border-red-500">
+            <div class="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-4xl">🔒</div>
+            <h3 class="text-xl font-black text-gray-800 mb-2">المحتوى مغلق!</h3>
+            <p class="text-gray-500 font-bold text-sm mb-6">عفواً يا بطل، أنت غير مشترك في هذه المادة أو انتهت مدة اشتراكك.</p>
+            <button onclick="closeLockedModal()" class="bg-gray-800 text-white font-bold py-3 px-8 rounded-xl w-full hover:bg-black transition">حسناً، فهمت</button>
+        </div>
+    </div>
+
+    <!-- LOGIC SCRIPT -->
+    <script type="module">
+        import { APP_CONFIG, AVATARS, GRADES, TERMS, SUBJECTS } from './config.js';
+
+        // 1. SUPABASE SETUP (Via init.js)
+        const supabase = window.supabaseClient;
+
+        // 2. STATE
+        let currentUser = null;
+        let leaderboardData = [];
+        let currentTab = 'top10';
+        const SCORE_WEIGHTS = { star: 10, crystal: 30, gem: 50 };
+
+        // 3. INITIALIZATION
+        window.addEventListener('load', async () => {
+            // A. Auth Check
+            const userStr = localStorage.getItem('tb_user');
+            if (!userStr) { window.location.href = 'index.html'; return; }
+
+            currentUser = JSON.parse(userStr);
+            if (currentUser.role !== 'student') {
+                alert('هذه الصفحة مخصصة للطلاب فقط!');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            // B. Render Interface
+            renderIdentity();
+            await fetchAndRenderStats();
+            initNavigation();
+        });
+
+        // --- HUD FUNCTIONS ---
+        function renderIdentity() {
+            const seed = currentUser.avatar_id || currentUser.access_code; 
+            const avatarUrl = `https://api.dicebear.com/9.x/adventurer/svg?seed=${seed}&backgroundColor=b6e3f4`;
+            
+            const imgEl = document.getElementById('hudAvatar');
+            imgEl.src = avatarUrl;
+            imgEl.onerror = () => { imgEl.src = 'https://api.dicebear.com/9.x/adventurer/svg?seed=fallback'; };
+
+            document.getElementById('hudName').innerText = currentUser.avatar_name || currentUser.real_name || 'البطل المجهول';
+        }
+
+        async function fetchAndRenderStats() {
+            try {
+                const { data, error } = await supabase.from('tb_progress').select('stars, crystals, gems').eq('user_id', currentUser.id);
+                if (error) throw error;
+
+                let totalStars = 0, totalCrystals = 0, totalGems = 0;
+                if (data && data.length > 0) {
+                    totalStars = data.reduce((sum, row) => sum + (row.stars || 0), 0);
+                    totalCrystals = data.reduce((sum, row) => sum + (row.crystals || 0), 0);
+                    totalGems = data.reduce((sum, row) => sum + (row.gems || 0), 0);
+                }
+
+                animateValue("countStars", 0, totalStars, 1500);
+                animateValue("countCrystals", 0, totalCrystals, 1500);
+                animateValue("countGems", 0, totalGems, 1500);
+
+            } catch (err) { console.error("Stats Error:", err); }
+        }
+
+        function animateValue(id, start, end, duration) {
+            if (start === end) return;
+            const obj = document.getElementById(id);
+            const range = end - start;
+            let current = start;
+            const increment = end > start ? 1 : -1;
+            const stepTime = Math.abs(Math.floor(duration / range));
+            
+            if (stepTime < 10) { obj.innerHTML = end; return; }
+
+            const timer = setInterval(() => {
+                current += increment;
+                obj.innerHTML = current;
+                if (current == end) {
+                    clearInterval(timer);
+                    obj.classList.add('animate-bounce');
+                    setTimeout(() => obj.classList.remove('animate-bounce'), 1000);
+                }
+            }, stepTime);
+        }
+
+        // --- NAVIGATION & WARP LOGIC ---
+        function initNavigation() {
+            const gate = document.getElementById('warp-gate');
+            const gradeSelect = document.getElementById('select-grade');
+            const termSelect = document.getElementById('select-term');
+            const subjectSelect = document.getElementById('select-subject');
+
+            GRADES.forEach(g => {
+                const opt = document.createElement('option');
+                opt.value = g.id;
+                opt.innerText = g.name;
+                gradeSelect.appendChild(opt);
+            });
+
+            TERMS.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t.id;
+                opt.innerText = t.name;
+                termSelect.appendChild(opt);
+            });
+
+            SUBJECTS.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.id;
+                opt.innerText = s.name;
+                subjectSelect.appendChild(opt);
+            });
+
+            gate.classList.remove('hidden');
+            setTimeout(() => { gate.classList.remove('opacity-0', 'translate-y-10'); }, 50);
+        }
+
+        window.attemptWarp = () => {
+            const grade = document.getElementById('select-grade').value;
+            const term = document.getElementById('select-term').value;
+            const subject = document.getElementById('select-subject').value;
+
+            if (!grade || !term || !subject) {
+                alert("يرجى اختيار الصف، الترم، والمادة أولاً! 🧐");
+                return;
+            }
+
+            // Subscription Check logic
+            const subscriptionKey = `${grade}_${subject}`;
+            const expiryDateIso = currentUser.subscriptions ? currentUser.subscriptions[subscriptionKey] : null;
+
+            if (!expiryDateIso) { showLockedModal(); return; }
+
+            const expiryDate = new Date(expiryDateIso);
+            const now = new Date();
+
+            if (expiryDate < now) { showLockedModal(); return; }
+
+            // Success - Redirect
+            const params = new URLSearchParams({ grade, term, subject });
+            const btn = document.querySelector('button[onclick="attemptWarp()"]');
+            btn.innerHTML = `<span class="animate-spin">🌀</span> جاري الانتقال...`;
+            
+            setTimeout(() => {
+                window.location.href = `warp.html?${params.toString()}`;
+            }, 500);
+        };
+
+        window.showLockedModal = () => document.getElementById('locked-modal').classList.remove('hidden');
+        window.closeLockedModal = () => document.getElementById('locked-modal').classList.add('hidden');
+
+        // --- LEADERBOARD LOGIC ---
+        window.toggleLeaderboard = async (show) => {
+            const modal = document.getElementById('leaderboard-modal');
+            if (show) {
+                modal.classList.remove('hidden');
+                await loadLeaderboard();
+            } else {
+                modal.classList.add('hidden');
+            }
+        };
+
+        async function loadLeaderboard() {
+            const listContainer = document.getElementById('leaderboard-list');
+            try {
+                const { data: users, error: uErr } = await supabase.from('tb_users').select('id, avatar_name, avatar_id').eq('role', 'student');
+                if (uErr) throw uErr;
+
+                const { data: progress, error: pErr } = await supabase.from('tb_progress').select('user_id, stars, crystals, gems');
+                if (pErr) throw pErr;
+
+                const scoreMap = {};
+                progress.forEach(row => {
+                    const points = (row.stars || 0)*SCORE_WEIGHTS.star + (row.crystals || 0)*SCORE_WEIGHTS.crystal + (row.gems || 0)*SCORE_WEIGHTS.gem;
+                    if (!scoreMap[row.user_id]) scoreMap[row.user_id] = 0;
+                    scoreMap[row.user_id] += points;
+                });
+
+                leaderboardData = users.map(user => ({ ...user, totalScore: scoreMap[user.id] || 0 }));
+                leaderboardData.sort((a, b) => b.totalScore - a.totalScore);
+                leaderboardData.forEach((item, index) => item.rank = index + 1);
+
+                const myEntry = leaderboardData.find(u => u.id === currentUser.id);
+                if (myEntry) document.getElementById('lb-my-score').innerText = myEntry.totalScore;
+
+                renderLeaderboardRows();
+            } catch (err) {
+                console.error("Leaderboard Error:", err);
+                listContainer.innerHTML = '<div class="text-center text-red-500">حدث خطأ في تحميل البيانات</div>';
+            }
+        }
+
+        window.switchLeaderboardTab = (tab) => {
+            currentTab = tab;
+            const btnTop = document.getElementById('tab-top10');
+            const btnMe = document.getElementById('tab-me');
+            
+            if (tab === 'top10') {
+                btnTop.className = "flex-1 py-2 rounded-xl font-bold text-sm transition-all bg-indigo-500 text-white shadow-game-hover";
+                btnMe.className = "flex-1 py-2 rounded-xl font-bold text-sm transition-all bg-white text-indigo-500 border-2 border-transparent hover:border-indigo-200";
+            } else {
+                btnMe.className = "flex-1 py-2 rounded-xl font-bold text-sm transition-all bg-indigo-500 text-white shadow-game-hover";
+                btnTop.className = "flex-1 py-2 rounded-xl font-bold text-sm transition-all bg-white text-indigo-500 border-2 border-transparent hover:border-indigo-200";
+            }
+            renderLeaderboardRows();
+        };
+
+        function renderLeaderboardRows() {
+            const listContainer = document.getElementById('leaderboard-list');
+            listContainer.innerHTML = '';
+            let dataToShow = [];
+
+            if (currentTab === 'top10') {
+                dataToShow = leaderboardData.slice(0, 10);
+            } else {
+                const myIndex = leaderboardData.findIndex(u => u.id === currentUser.id);
+                if (myIndex === -1) { dataToShow = []; } 
+                else {
+                    const start = Math.max(0, myIndex - 2);
+                    const end = Math.min(leaderboardData.length, myIndex + 3);
+                    dataToShow = leaderboardData.slice(start, end);
+                }
+            }
+
+            if (dataToShow.length === 0) {
+                listContainer.innerHTML = '<div class="text-center text-gray-400 py-4">لا توجد بيانات</div>';
+                return;
+            }
+
+            dataToShow.forEach(item => {
+                const isMe = item.id === currentUser.id;
+                const seed = item.avatar_id || 'fallback';
+                const avatarUrl = `https://api.dicebear.com/9.x/adventurer/svg?seed=${seed}&backgroundColor=b6e3f4`;
+                
+                let rankBadge = `<span class="font-black text-gray-500 text-xl w-8 text-center">#${item.rank}</span>`;
+                if (item.rank === 1) rankBadge = `<span class="text-2xl">🥇</span>`;
+                if (item.rank === 2) rankBadge = `<span class="text-2xl">🥈</span>`;
+                if (item.rank === 3) rankBadge = `<span class="text-2xl">🥉</span>`;
+
+                const row = document.createElement('div');
+                row.className = `flex items-center gap-3 p-3 rounded-2xl border-2 transition-all ${
+                    isMe ? 'bg-yellow-50 border-yellow-400 shadow-md transform scale-[1.02]' : 'bg-white border-gray-100 hover:border-indigo-200'
+                }`;
+
+                row.innerHTML = `
+                    <div class="flex-shrink-0 w-8 flex justify-center">${rankBadge}</div>
+                    <div class="w-10 h-10 rounded-full bg-gray-200 overflow-hidden border border-gray-300">
+                        <img src="${avatarUrl}" class="w-full h-full object-cover">
+                    </div>
+                    <div class="flex-1">
+                        <div class="font-bold text-gray-800 text-sm truncate max-w-[120px]">
+                            ${item.avatar_name || 'بدون اسم'}
+                            ${isMe ? '<span class="text-[10px] text-indigo-500 mr-1">(أنت)</span>' : ''}
+                        </div>
+                    </div>
+                    <div class="flex flex-col items-end">
+                        <span class="font-black text-indigo-600 font-game text-lg leading-none">${item.totalScore}</span>
+                        <span class="text-[9px] text-gray-400 font-bold">نقطة</span>
+                    </div>
+                `;
+                listContainer.appendChild(row);
+            });
+        }
+
+        window.logout = () => { localStorage.removeItem('tb_user'); window.location.href = 'index.html'; };
+    </script>
+</body>
+</html>

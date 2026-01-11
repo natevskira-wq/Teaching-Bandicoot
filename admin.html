@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة التحكم - المدرّس الشقي</title>
+    
+    <!-- Google Fonts: Cairo -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- LOAD CONNECTION FROM INIT.JS -->
+    <script src="init.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { cairo: ['Cairo', 'sans-serif'] },
+                    colors: {
+                        brand: { light: '#FF9F43', DEFAULT: '#FF6B6B', dark: '#EE5253' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Cairo', sans-serif; }
+        /* Custom scrollbar for the matrix */
+        .matrix-scroll::-webkit-scrollbar { width: 8px; }
+        .matrix-scroll::-webkit-scrollbar-track { background: #f1f1f1; }
+        .matrix-scroll::-webkit-scrollbar-thumb { background: #c7c7c7; border-radius: 4px; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col">
+
+    <!-- Navbar -->
+    <nav class="bg-gray-900 text-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <span class="text-3xl">🦊</span>
+                <div>
+                    <h1 class="font-bold text-xl leading-tight">لوحة التحكم</h1>
+                    <p class="text-xs text-gray-400">إدارة المستخدمين والاشتراكات</p>
+                </div>
+            </div>
+            <button onclick="logout()" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-sm font-bold transition">
+                تسجيل خروج
+            </button>
+        </div>
+    </nav>
+
+    <!-- Main Content Grid -->
+    <div class="flex-1 max-w-7xl mx-auto w-full p-4 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- LEFT COLUMN: User List (lg:col-span-4) -->
+        <div class="lg:col-span-4 flex flex-col gap-4 h-[calc(100vh-100px)]">
+            
+            <!-- Search & Filter -->
+            <div class="bg-white p-4 rounded-xl shadow-sm">
+                <input type="text" id="searchInput" placeholder="بحث بالاسم أو الكود..." 
+                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand outline-none">
+            </div>
+
+            <!-- Users List Container -->
+            <div id="usersList" class="bg-white rounded-xl shadow-sm flex-1 overflow-y-auto p-2 space-y-2 matrix-scroll">
+                <!-- User Cards injected via JS -->
+                <div class="text-center text-gray-400 mt-10">جاري التحميل...</div>
+            </div>
+        </div>
+
+        <!-- RIGHT COLUMN: Editor Form (lg:col-span-8) -->
+        <div class="lg:col-span-8">
+            <div class="bg-white rounded-xl shadow-lg border-t-4 border-brand overflow-hidden flex flex-col h-[calc(100vh-100px)]">
+                
+                <!-- Form Header -->
+                <div class="p-6 border-b flex justify-between items-center bg-gray-50">
+                    <h2 id="formTitle" class="text-xl font-bold text-gray-800">إضافة مستخدم جديد</h2>
+                    <button onclick="resetForm()" class="text-sm text-gray-500 hover:text-brand underline">
+                        تفريغ الحقول
+                    </button>
+                </div>
+
+                <!-- Scrollable Form Body -->
+                <div class="flex-1 overflow-y-auto p-6 matrix-scroll">
+                    <form id="userForm" class="space-y-6">
+                        <input type="hidden" id="userId">
+
+                        <!-- Row 1: Role & Basics -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 mb-1">نوع الحساب</label>
+                                <select id="role" class="w-full border rounded-lg p-2 bg-gray-50" onchange="toggleMatrixLabel()">
+                                    <option value="student" selected>طالب 🎓</option>
+                                    <option value="teacher">مدرس 👨‍🏫</option>
+                                    <option value="admin">أدمن 🛡️</option>
+                                </select>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-sm font-bold text-gray-700 mb-1">الاسم الحقيقي</label>
+                                <input type="text" id="real_name" required class="w-full border rounded-lg p-2 focus:border-brand outline-none">
+                            </div>
+                        </div>
+
+                        <!-- Row 2: Credentials -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-blue-50 p-4 rounded-lg border border-blue-100">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 mb-1">كود الدخول (User)</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="access_code" required class="w-full border rounded-lg p-2 font-mono text-center tracking-widest">
+                                    <button type="button" onclick="generateCode()" class="bg-blue-600 text-white px-3 rounded-lg hover:bg-blue-700" title="توليد تلقائي">🎲</button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 mb-1">كلمة السر</label>
+                                <input type="text" id="password" required class="w-full border rounded-lg p-2 font-mono">
+                            </div>
+                        </div>
+
+                        <!-- Row 3: Contact Info -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 mb-1">رقم الأب</label>
+                                <input type="tel" id="phone_father" class="w-full border rounded-lg p-2">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 mb-1">رقم الأم</label>
+                                <input type="tel" id="phone_mother" class="w-full border rounded-lg p-2">
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <!-- Gamification Basics -->
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">اسم البطل (في اللعبة)</label>
+                            <input type="text" id="avatar_name" placeholder="مثال: الأسد الشجاع" class="w-full border rounded-lg p-2">
+                        </div>
+
+                        <hr>
+
+                        <!-- SUBSCRIPTION MATRIX -->
+                        <div>
+                            <h3 id="matrixTitle" class="text-lg font-bold text-brand mb-4">💎 الصلاحيات والاشتراكات</h3>
+                            <div id="subscriptionMatrix" class="space-y-4">
+                                <!-- Matrix Injected via JS -->
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Footer Actions -->
+                <div class="p-4 border-t bg-gray-50 flex justify-between items-center">
+                    <button type="button" onclick="deleteUser()" id="deleteBtn" class="hidden text-red-600 font-bold hover:bg-red-50 px-4 py-2 rounded-lg transition">
+                        حذف المستخدم
+                    </button>
+                    <button type="button" onclick="saveUser()" class="bg-brand hover:bg-brand-dark text-white font-bold py-3 px-8 rounded-xl shadow-lg transform active:scale-95 transition w-full md:w-auto">
+                        حفظ البيانات 💾
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN LOGIC -->
+    <script type="module">
+        // 1. IMPORTS & CONFIG
+        import { APP_CONFIG, STAGES, GRADES, SUBJECTS } from './config.js';
+
+        // 2. SUPABASE SETUP (Via init.js)
+        // We assign the global client to a local variable for compatibility
+        const supabase = window.supabaseClient;
+
+        // 3. STATE
+        let allUsers = [];
+        let currentUserId = null;
+
+        // 4. INIT
+        window.addEventListener('load', async () => {
+            checkAuth();
+            renderMatrix();
+            await loadUsers();
+            generateCode(); // Pre-fill for new user
+        });
+
+        // ==========================================
+        // UI BUILDERS
+        // ==========================================
+
+        window.renderMatrix = function() {
+            const container = document.getElementById('subscriptionMatrix');
+            container.innerHTML = '';
+
+            STAGES.forEach(stage => {
+                const stageGrades = GRADES.filter(g => g.stage_id === stage.id);
+                if (stageGrades.length === 0) return;
+
+                const stageDiv = document.createElement('div');
+                stageDiv.className = 'border rounded-xl overflow-hidden';
+                
+                stageDiv.innerHTML = `
+                    <div class="bg-gray-800 text-white p-2 px-4 flex justify-between cursor-pointer select-none" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                        <span class="font-bold">${stage.name}</span>
+                        <span class="text-xs opacity-75">▼</span>
+                    </div>
+                    <div class="p-4 bg-white hidden"> 
+                        <div class="space-y-6" id="stage_content_${stage.id}"></div>
+                    </div>
+                `;
+
+                container.appendChild(stageDiv);
+
+                const gradesContainer = stageDiv.querySelector(`#stage_content_${stage.id}`);
+                
+                stageGrades.forEach(grade => {
+                    const gradeBlock = document.createElement('div');
+                    gradeBlock.className = '';
+                    
+                    let subjectsHtml = '';
+                    SUBJECTS.forEach(sub => {
+                        const uniqueId = `${grade.id}__${sub.id}`;
+                        subjectsHtml += `
+                            <label class="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200 transition">
+                                <input type="checkbox" 
+                                    class="sub-checkbox w-4 h-4 text-brand rounded focus:ring-brand" 
+                                    id="chk_${uniqueId}"
+                                    data-key="${grade.id}_${sub.id}"
+                                >
+                                <span class="text-sm select-none">${sub.name}</span>
+                            </label>
+                        `;
+                    });
+
+                    gradeBlock.innerHTML = `
+                        <h4 class="font-bold text-gray-700 mb-2 border-b pb-1 text-sm">${grade.name}</h4>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            ${subjectsHtml}
+                        </div>
+                    `;
+                    gradesContainer.appendChild(gradeBlock);
+                });
+            });
+        };
+
+        window.renderUserList = function(users) {
+            const list = document.getElementById('usersList');
+            list.innerHTML = '';
+
+            if(users.length === 0) {
+                list.innerHTML = '<div class="p-4 text-center text-gray-500">لا يوجد مستخدمين</div>';
+                return;
+            }
+
+            users.forEach(user => {
+                const isTeacher = user.role === 'teacher';
+                const isAdmin = user.role === 'admin';
+                const badgeColor = isAdmin ? 'bg-red-100 text-red-800' : (isTeacher ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800');
+                const badgeLabel = isAdmin ? 'أدمن' : (isTeacher ? 'مدرس' : 'طالب');
+
+                const card = document.createElement('div');
+                card.className = `p-3 rounded-lg border hover:shadow-md cursor-pointer transition flex justify-between items-center ${currentUserId === user.id ? 'border-brand bg-orange-50' : 'bg-white border-gray-200'}`;
+                card.onclick = () => loadUserIntoForm(user);
+
+                card.innerHTML = `
+                    <div>
+                        <div class="font-bold text-gray-800">${user.real_name || 'بدون اسم'}</div>
+                        <div class="text-xs text-gray-500 font-mono">${user.access_code}</div>
+                    </div>
+                    <div class="flex flex-col items-end gap-1">
+                        <span class="text-[10px] px-2 py-0.5 rounded-full font-bold ${badgeColor}">${badgeLabel}</span>
+                        ${user.role === 'student' ? `<button onclick="event.stopPropagation(); quickRenew('${user.id}')" class="text-[10px] text-brand hover:underline">تجديد 30 يوم</button>` : ''}
+                    </div>
+                `;
+                list.appendChild(card);
+            });
+        };
+
+        // ==========================================
+        // DATA ACTIONS
+        // ==========================================
+
+        window.loadUsers = async function() {
+            const list = document.getElementById('usersList');
+            const { data, error } = await supabase
+                .from('tb_users')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                alert('خطأ في تحميل البيانات');
+                console.error(error);
+            } else {
+                allUsers = data;
+                renderUserList(allUsers);
+            }
+        };
+
+        window.saveUser = async function() {
+            const submitBtn = document.querySelector('button[onclick="saveUser()"]');
+            submitBtn.textContent = 'جاري الحفظ...';
+            submitBtn.disabled = true;
+
+            const userData = {
+                role: document.getElementById('role').value,
+                real_name: document.getElementById('real_name').value,
+                access_code: document.getElementById('access_code').value,
+                password: document.getElementById('password').value, 
+                avatar_name: document.getElementById('avatar_name').value,
+                phone_numbers: {
+                    father: document.getElementById('phone_father').value,
+                    mother: document.getElementById('phone_mother').value
+                }
+            };
+
+            const newSubs = {};
+            const checkboxes = document.querySelectorAll('.sub-checkbox');
+            const future = new Date();
+            future.setDate(future.getDate() + 30); 
+            
+            checkboxes.forEach(chk => {
+                if (chk.checked) {
+                    const key = chk.dataset.key;
+                    let existingDate = null;
+                    if (currentUserId) {
+                        const userObj = allUsers.find(u => u.id === currentUserId);
+                        if (userObj && userObj.subscriptions && userObj.subscriptions[key]) {
+                            existingDate = userObj.subscriptions[key];
+                        }
+                    }
+                    newSubs[key] = existingDate || future.toISOString();
+                }
+            });
+
+            userData.subscriptions = newSubs;
+
+            try {
+                let error;
+                if (currentUserId) {
+                    const { error: updateError } = await supabase.from('tb_users').update(userData).eq('id', currentUserId);
+                    error = updateError;
+                } else {
+                    const { error: insertError } = await supabase.from('tb_users').insert([userData]);
+                    error = insertError;
+                }
+
+                if (error) throw error;
+                await loadUsers();
+                resetForm();
+                alert('تم الحفظ بنجاح! ✅');
+
+            } catch (err) {
+                console.error(err);
+                alert('حدث خطأ أثناء الحفظ. تأكد أن الكود غير مكرر.');
+            } finally {
+                submitBtn.textContent = 'حفظ البيانات 💾';
+                submitBtn.disabled = false;
+            }
+        };
+
+        window.deleteUser = async function() {
+            if (!currentUserId) return;
+            if (!confirm('هل أنت متأكد من حذف هذا المستخدم؟ لا يمكن التراجع.')) return;
+
+            const { error } = await supabase.from('tb_users').delete().eq('id', currentUserId);
+            
+            if (error) {
+                alert('فشل الحذف');
+            } else {
+                await loadUsers();
+                resetForm();
+            }
+        };
+
+        window.quickRenew = async function(id) {
+            const user = allUsers.find(u => u.id === id);
+            if (!user) return;
+
+            const newSubs = { ...user.subscriptions };
+            const future = new Date();
+            future.setDate(future.getDate() + 30);
+
+            Object.keys(newSubs).forEach(k => {
+                newSubs[k] = future.toISOString();
+            });
+
+            const { error } = await supabase.from('tb_users').update({ subscriptions: newSubs }).eq('id', id);
+
+            if (error) alert('خطأ');
+            else {
+                alert('تم تجديد جميع المواد 30 يوم ✅');
+                loadUsers();
+            }
+        };
+
+        // ==========================================
+        // HELPERS
+        // ==========================================
+
+        window.loadUserIntoForm = function(user) {
+            currentUserId = user.id;
+            document.getElementById('formTitle').innerText = 'تعديل بيانات: ' + user.real_name;
+            document.getElementById('userId').value = user.id;
+            document.getElementById('deleteBtn').classList.remove('hidden');
+
+            document.getElementById('role').value = user.role;
+            document.getElementById('real_name').value = user.real_name || '';
+            document.getElementById('access_code').value = user.access_code;
+            document.getElementById('password').value = user.password;
+            document.getElementById('avatar_name').value = user.avatar_name || '';
+            
+            const phones = user.phone_numbers || {};
+            document.getElementById('phone_father').value = phones.father || '';
+            document.getElementById('phone_mother').value = phones.mother || '';
+
+            document.querySelectorAll('.sub-checkbox').forEach(c => c.checked = false);
+            
+            const subs = user.subscriptions || {};
+            Object.keys(subs).forEach(key => {
+                const chk = document.querySelector(`.sub-checkbox[data-key="${key}"]`);
+                if (chk) {
+                    chk.checked = true;
+                    const expiry = new Date(subs[key]);
+                    if (expiry < new Date()) {
+                        chk.parentElement.classList.add('bg-red-50', 'border-red-200');
+                    } else {
+                        chk.parentElement.classList.remove('bg-red-50', 'border-red-200');
+                    }
+                }
+            });
+
+            toggleMatrixLabel();
+        };
+
+        window.resetForm = function() {
+            currentUserId = null;
+            document.getElementById('formTitle').innerText = 'إضافة مستخدم جديد';
+            document.getElementById('userForm').reset();
+            document.getElementById('deleteBtn').classList.add('hidden');
+            generateCode();
+            document.querySelectorAll('.sub-checkbox').forEach(c => {
+                c.checked = false;
+                c.parentElement.classList.remove('bg-red-50', 'border-red-200');
+            });
+        };
+
+        window.generateCode = function() {
+            const prefix = Math.floor(Math.random() * 90) + 10;
+            const suffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+            document.getElementById('access_code').value = `${prefix}-${suffix}`;
+        };
+
+        window.toggleMatrixLabel = function() {
+            const role = document.getElementById('role').value;
+            const title = document.getElementById('matrixTitle');
+            if (role === 'teacher') title.innerText = '👨‍🏫 مواد التدريس المصرح بها';
+            else if (role === 'admin') title.innerText = '🛡️ صلاحيات النظام (غير مفعل للأدمن)';
+            else title.innerText = '💎 الاشتراكات الدراسية';
+        };
+
+        window.checkAuth = function() {
+            const userStr = localStorage.getItem('tb_user');
+            if (!userStr) window.location.href = 'index.html';
+            const user = JSON.parse(userStr);
+            if (user.role !== 'admin') {
+                alert('غير مصرح لك بالدخول هنا');
+                window.location.href = 'index.html';
+            }
+        };
+
+        window.logout = function() {
+            localStorage.removeItem('tb_user');
+            window.location.href = 'index.html';
+        };
+
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            const filtered = allUsers.filter(u => 
+                (u.real_name && u.real_name.toLowerCase().includes(term)) || 
+                u.access_code.toLowerCase().includes(term)
+            );
+            renderUserList(filtered);
+        });
+
+    </script>
+</body>
+</html>

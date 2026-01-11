@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>خريطة المنهج - المدرّس الشقي</title>
+    
+    <!-- Google Fonts: Cairo & Changa -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Changa:wght@600;800&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome (Icons) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- LOAD CONNECTION FROM INIT.JS -->
+    <script src="init.js"></script>
+
+    <!-- Tailwind Configuration -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        cairo: ['Cairo', 'sans-serif'],
+                        game: ['Changa', 'sans-serif'],
+                    },
+                    colors: {
+                        sky: { light: '#E0F7FA', DEFAULT: '#4DD0E1', dark: '#0097A7' }
+                    },
+                    boxShadow: {
+                        'glass': '0 4px 30px rgba(0, 0, 0, 0.1)',
+                    },
+                    animation: {
+                        'bounce-slow': 'bounce 3s infinite',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Cairo', sans-serif;
+            background-color: #f0f9ff;
+            /* SVG Cloud Pattern Background */
+            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23bae6fd' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+            overscroll-behavior-y: none;
+        }
+
+        .glass-header {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        /* Shake Animation for Locked Levels */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+            20%, 40%, 60%, 80% { transform: translateX(4px); }
+        }
+        .shake-locked {
+            animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        /* Connector Line Pattern */
+        .connector-line {
+            background-image: repeating-linear-gradient(to bottom, transparent, transparent 10px, #cbd5e1 10px, #cbd5e1 20px);
+        }
+    </style>
+</head>
+<body class="min-h-screen text-gray-800">
+
+    <!-- 1. STICKY HEADER -->
+    <header class="glass-header sticky top-0 z-50 shadow-glass transition-all duration-300">
+        <div class="container mx-auto px-4 h-16 flex justify-between items-center">
+            
+            <!-- Back Button -->
+            <a href="dashboard.html" class="w-10 h-10 flex items-center justify-center rounded-full bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-indigo-600 shadow-sm transition-all active:scale-95">
+                <i class="fa-solid fa-arrow-right text-lg"></i>
+            </a>
+
+            <!-- Page Title (Dynamic) -->
+            <div class="flex flex-col items-center">
+                <h1 id="header-title" class="font-game font-bold text-lg md:text-xl text-indigo-900 leading-tight tracking-wide">
+                    جاري التحميل...
+                </h1>
+                <span id="header-subtitle" class="text-[10px] md:text-xs font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full mt-0.5">
+                    خريطة المنهج
+                </span>
+            </div>
+
+            <!-- Context Icon -->
+            <div class="w-10 h-10 flex items-center justify-center rounded-full bg-indigo-100 text-indigo-600 border border-indigo-200 shadow-inner">
+                <i id="subject-icon" class="fa-solid fa-book-open"></i>
+            </div>
+        </div>
+    </header>
+
+    <!-- 2. MAIN CONTAINER -->
+    <main id="map-container" class="container mx-auto px-4 py-8 pb-20 flex flex-col items-center justify-center min-h-[80vh]">
+        
+        <!-- Loading State -->
+        <div id="loading-spinner" class="flex flex-col items-center animate-pulse text-center">
+            <div class="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-lg border-4 border-sky-200 mb-4">
+                <i class="fa-solid fa-earth-africa text-4xl text-sky-400 animate-bounce"></i>
+            </div>
+            <h2 class="text-xl font-bold text-gray-400">جاري تجهيز الخريطة...</h2>
+        </div>
+
+    </main>
+
+    <!-- 3. LOGIC SCRIPT -->
+    <script type="module">
+        import { GRADES, TERMS, SUBJECTS } from './config.js';
+
+        // 1. SUPABASE SETUP (Via init.js)
+        const supabase = window.supabaseClient;
+
+        // --- STATE ---
+        const state = { grade: null, term: null, subject: null };
+        let currentUser = null;
+        let mapNodes = []; 
+
+        // --- INITIALIZATION ---
+        window.addEventListener('load', async () => {
+            checkAuth();
+            const isValid = parseURL();
+            if (isValid) {
+                renderHeader();
+                await loadMapData();
+            }
+        });
+
+        // AUTH
+        function checkAuth() {
+            const userStr = localStorage.getItem('tb_user');
+            if (!userStr) {
+                window.location.href = 'index.html';
+                return;
+            }
+            currentUser = JSON.parse(userStr);
+        }
+
+        // URL PARSER
+        function parseURL() {
+            const params = new URLSearchParams(window.location.search);
+            const gradeId = params.get('grade');
+            const termId = params.get('term');
+            const subjectId = params.get('subject');
+
+            if (!gradeId || !termId || !subjectId) {
+                window.location.href = 'dashboard.html';
+                return false;
+            }
+
+            const gradeObj = GRADES.find(g => g.id === gradeId);
+            const termObj = TERMS.find(t => t.id === termId);
+            const subjectObj = SUBJECTS.find(s => s.id === subjectId);
+
+            if (!gradeObj || !termObj || !subjectObj) {
+                alert("البيانات المطلوبة غير صحيحة.");
+                window.location.href = 'dashboard.html';
+                return false;
+            }
+
+            state.grade = gradeObj;
+            state.term = termObj;
+            state.subject = subjectObj;
+            return true;
+        }
+
+        // HEADER
+        function renderHeader() {
+            const titleEl = document.getElementById('header-title');
+            const subtitleEl = document.getElementById('header-subtitle');
+            const iconEl = document.getElementById('subject-icon');
+
+            titleEl.innerText = `${state.subject.name} - ${state.grade.short_name || state.grade.name}`;
+            subtitleEl.innerText = state.term.name;
+
+            let iconClass = 'fa-book-open';
+            if (state.subject.id.includes('math')) iconClass = 'fa-calculator';
+            else if (state.subject.id.includes('science') || state.subject.id.includes('physics')) iconClass = 'fa-flask';
+            else if (state.subject.id.includes('history')) iconClass = 'fa-landmark';
+            else if (state.subject.id.includes('geo')) iconClass = 'fa-earth-africa';
+            
+            iconEl.className = `fa-solid ${iconClass}`;
+        }
+
+        // DATA LOADING
+        async function loadMapData() {
+            try {
+                // Fetch Lessons
+                const { data: lessons, error: lErr } = await supabase
+                    .from('tb_lessons')
+                    .select('id, title, type, order_index')
+                    .eq('grade_id', state.grade.id)
+                    .eq('subject_id', state.subject.id)
+                    .eq('term_id', state.term.id)
+                    .order('order_index', { ascending: true });
+
+                if (lErr) throw lErr;
+
+                if (!lessons || lessons.length === 0) {
+                    document.getElementById('loading-spinner').innerHTML = `
+                        <div class="text-6xl mb-4">🛑</div>
+                        <h2 class="text-gray-500 font-bold">لا يوجد محتوى مضاف حتى الآن</h2>
+                        <button onclick="location.href='dashboard.html'" class="mt-4 text-indigo-500 font-bold underline">عودة للرئيسية</button>
+                    `;
+                    return;
+                }
+
+                // Fetch Progress
+                const lessonIds = lessons.map(l => l.id);
+                const { data: progress, error: pErr } = await supabase
+                    .from('tb_progress')
+                    .select('lesson_id, score, stars, crystals, gems')
+                    .eq('user_id', currentUser.id)
+                    .in('lesson_id', lessonIds);
+
+                if (pErr) throw pErr;
+
+                // Merge
+                mapNodes = lessons.map(lesson => {
+                    const p = progress.find(row => row.lesson_id === lesson.id);
+                    return {
+                        ...lesson,
+                        stats: {
+                            is_played: !!p,
+                            score: p ? p.score : 0,
+                            stars: p ? (p.stars || 0) : 0,
+                            crystals: p ? (p.crystals || 0) : 0,
+                            gems: p ? (p.gems || 0) : 0
+                        }
+                    };
+                });
+
+                // Render Map
+                renderMap(mapNodes);
+
+            } catch (err) {
+                console.error("Map Load Error:", err);
+                document.getElementById('loading-spinner').innerHTML = `
+                    <div class="text-red-500 text-4xl mb-2">⚠️</div>
+                    <h2 class="font-bold text-gray-600">حدث خطأ في تحميل الخريطة</h2>
+                    <button onclick="location.reload()" class="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold">إعادة المحاولة</button>
+                `;
+            }
+        }
+
+        // MAP RENDERING
+        function renderMap(nodes) {
+            const container = document.getElementById('map-container');
+            container.innerHTML = ''; 
+
+            const mapWrapper = document.createElement('div');
+            mapWrapper.className = 'relative flex flex-col items-center gap-12 py-10 w-full max-w-md';
+
+            // Connector Line
+            const line = document.createElement('div');
+            line.className = 'absolute top-4 bottom-10 left-1/2 -translate-x-1/2 w-3 bg-gray-200 border-x-2 border-gray-300 rounded-full -z-10 connector-line';
+            mapWrapper.appendChild(line);
+
+            let isPathUnlocked = true; 
+
+            nodes.forEach((node, index) => {
+                const isLocked = !isPathUnlocked;
+                const isCompleted = node.stats.score >= 50;
+                const isCurrentLevel = !isLocked && !isCompleted;
+
+                // 1. GET SKINS (Using Asset Manager)
+                const visuals = getNodeVisuals(node.type, isLocked);
+
+                // 2. Zig-Zag Offset
+                const offsetClass = index % 2 === 0 ? '-translate-x-8' : 'translate-x-8';
+
+                // 3. Animation Logic
+                let finalClass = visuals.cssClass;
+                if (isCurrentLevel) {
+                    finalClass += ' animate-bounce-slow ring-4 ring-yellow-400 ring-offset-2';
+                }
+
+                // 4. Create Button
+                const btn = document.createElement('button');
+                btn.onclick = (e) => handleNodeClick(e, node.id, isLocked);
+                btn.className = `${finalClass} ${offsetClass}`;
+                btn.innerHTML = visuals.iconHTML;
+
+                // 5. Add Rewards (Using Badge Manager)
+                if (isCompleted) {
+                    // Reward Badge
+                    btn.innerHTML += getRewardBadge(node.type, node.stats);
+                    
+                    // Score Label
+                    const scoreLabel = document.createElement('div');
+                    scoreLabel.className = "absolute -bottom-8 left-1/2 -translate-x-1/2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-full font-bold whitespace-nowrap backdrop-blur-sm";
+                    scoreLabel.innerText = `%${node.stats.score}`;
+                    btn.appendChild(scoreLabel);
+                }
+
+                // 6. Title Label
+                const titleLabel = document.createElement('div');
+                titleLabel.className = "absolute -bottom-6 translate-y-full w-40 text-center text-xs font-bold text-gray-600 leading-tight bg-white/80 px-1 rounded shadow-sm";
+                if (isCompleted) titleLabel.classList.add("mt-4");
+                titleLabel.innerText = node.title;
+                btn.appendChild(titleLabel);
+
+                mapWrapper.appendChild(btn);
+
+                // Update Progression
+                if (node.stats.score < 50) {
+                    isPathUnlocked = false;
+                }
+            });
+
+            container.appendChild(mapWrapper);
+            const spacer = document.createElement('div');
+            spacer.className = "h-20";
+            container.appendChild(spacer);
+        }
+
+        // INTERACTION
+        window.handleNodeClick = (event, id, isLocked) => {
+            if (isLocked) {
+                const clickedBtn = event.currentTarget;
+                clickedBtn.classList.remove('shake-locked');
+                void clickedBtn.offsetWidth; // Trigger Reflow
+                clickedBtn.classList.add('shake-locked');
+                showToast("⛔ يجب إنهاء المرحلة السابقة أولاً!");
+                if (navigator.vibrate) navigator.vibrate(200);
+            } else {
+                window.location.href = `drill.html?id=${id}`;
+            }
+        };
+
+        function showToast(msg) {
+            const toast = document.createElement('div');
+            toast.className = "fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full shadow-lg font-bold z-[100] animate-bounce";
+            toast.innerText = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2000);
+        }
+
+        // ------------------------------------------
+        // ASSET MANAGER (The Skins & Badges)
+        // ------------------------------------------
+        function getNodeVisuals(type, isLocked) {
+            const baseClass = "relative flex items-center justify-center transition-all duration-200 transform hover:scale-105 active:scale-95 border-b-4 active:border-b-0 active:translate-y-1 shadow-lg";
+            
+            const icons = {
+                lock: `<svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 opacity-50" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C9.243 2 7 4.243 7 7v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7c0-2.757-2.243-5-5-5zm0 2c1.654 0 3 1.346 3 3v3H9V7c0-1.654 1.346-3 3-3zm0 10c1.103 0 2 .897 2 2s-.897 2-2 2-2-.897-2-2 .897-2 2-2z"/></svg>`,
+                book: `<svg xmlns="http://www.w3.org/2000/svg" class="w-9 h-9 drop-shadow-sm" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5v14c0 1.103.897 2 2 2h14c1.103 0 2-.897 2-2V5c0-1.103-.897-2-2-2H5c-1.103 0-2 .897-2 2zm16.002 14H5V5h14l.002 14z"/><path d="M11 7h2v10h-2zm-4 0h2v10H7zm8 0h2v10h-2z"/></svg>`,
+                crystal: `<svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 drop-shadow-md" viewBox="0 0 24 24" fill="currentColor"><path d="m12.002 21.534-9.98-9.98 2.37-6.24 7.61-4.09 7.63 4.09 2.37 6.24-10 9.98zm-7.05-10.04 7.05 7.05 7.05-7.05-1.66-4.39-5.39-2.89-5.39 2.89-1.66 4.39z"/></svg>`,
+                skull: `<svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 drop-shadow-md" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c-4.963 0-9 4.038-9 9 0 3.328 1.82 6.232 4.513 7.79l-2.067 1.378A1 1 0 0 0 6 22h12a1 1 0 0 0 .555-1.832l-2.067-1.378C19.18 17.232 21 14.328 21 11c0-4.962-4.037-9-9-9zm0 16c-1.313 0-2.613-.763-3.695-1.664l.89-1.336C10.057 15.61 11.025 16 12 16c.975 0 1.943-.39 2.805-1.001l.89 1.337C14.613 17.236 13.313 18 12 18zm4-9c0 1.103-.897 2-2 2s-2-.897-2-2 .897-2 2-2 2 .897 2 2zm-8 0c0 1.103-.897 2-2 2s-2-.897-2-2 .897-2 2-2 2 .897 2 2z"/></svg>`
+            };
+
+            if (isLocked) {
+                return {
+                    cssClass: `${baseClass} bg-slate-200 border-slate-400 text-slate-500 w-20 h-20 rounded-2xl opacity-75`,
+                    iconHTML: icons.lock
+                };
+            }
+
+            if (type === 'lesson') {
+                return {
+                    cssClass: `${baseClass} bg-blue-500 border-blue-700 text-white w-20 h-20 rounded-2xl shadow-blue-500/40`,
+                    iconHTML: icons.book
+                };
+            }
+
+            if (type === 'revision') {
+                return {
+                    cssClass: `${baseClass} bg-purple-600 border-purple-800 text-white w-22 h-22 rounded-3xl shadow-lg shadow-purple-500/50 ring-2 ring-purple-300 ring-offset-2 ring-offset-purple-100`,
+                    iconHTML: icons.crystal
+                };
+            }
+
+            if (type === 'exam' || type === 'boss') {
+                return {
+                    cssClass: `${baseClass} bg-red-600 border-red-900 text-white w-24 h-24 rounded-full shadow-xl shadow-red-500/50 ring-4 ring-red-400 ring-offset-2 ring-offset-red-100`,
+                    iconHTML: icons.skull
+                };
+            }
+
+            return { cssClass: baseClass, iconHTML: '' };
+        }
+
+        function getRewardBadge(type, stats) {
+            const score = stats.score || 0;
+            
+            if (type === 'lesson') {
+                const starCount = score >= 90 ? 3 : (score >= 75 ? 2 : 1);
+                let starSVG = `<svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 text-yellow-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279-7.416-3.967-7.417 3.967 1.481-8.279-6.064-5.828 8.332-1.151z"/></svg>`;
+                let starsHTML = '';
+                for(let i=0; i<starCount; i++) starsHTML += starSVG;
+
+                return `<div class="absolute -top-3 -right-3 bg-white rounded-full px-1.5 h-6 flex items-center justify-center gap-0.5 shadow-md border-2 border-gray-100 z-20">${starsHTML}</div>`;
+            }
+
+            if (type === 'revision') {
+                const amount = stats.crystals || 0;
+                return `
+                    <div class="absolute -top-3 -right-3 bg-white rounded-full w-8 h-8 flex items-center justify-center shadow-md border-2 border-gray-100 z-20">
+                        <span class="text-xs font-black text-purple-600 mr-0.5">${amount}</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 text-purple-500" viewBox="0 0 24 24" fill="currentColor"><path d="m12.002 21.534-9.98-9.98 2.37-6.24 7.61-4.09 7.63 4.09 2.37 6.24-10 9.98z"/></svg>
+                    </div>
+                `;
+            }
+
+            if (type === 'exam' || type === 'boss') {
+                const amount = stats.gems || 0;
+                return `
+                    <div class="absolute -top-3 -right-3 bg-white rounded-full w-8 h-8 flex items-center justify-center shadow-md border-2 border-gray-100 z-20">
+                        <span class="text-xs font-black text-teal-600 mr-0.5">${amount}</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 text-teal-500" viewBox="0 0 24 24" fill="currentColor"><path d="m2 9 4-6h12l4 6-10 13z"/></svg>
+                    </div>
+                `;
+            }
+            return '';
+        }
+    </script>
+</body>
+</html>
