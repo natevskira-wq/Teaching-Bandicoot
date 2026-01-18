@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>لوحة الطالب - المدرّس الشقي</title>
     
-    <!-- Google Fonts: Cairo & Changa -->
+    <!-- Google Fonts: Cairo & Changa (Game-like Arabic fonts) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Changa:wght@600;800&display=swap" rel="stylesheet">
     
@@ -14,9 +14,6 @@
     
     <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-    <!-- LOAD CONNECTION FROM INIT.JS -->
-    <script src="init.js"></script>
 
     <!-- Tailwind Configuration for Game UI -->
     <script>
@@ -68,6 +65,25 @@
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen pb-20">
+
+    <!-- FAST PASS OVERLAY -->
+    <div id="fast-pass-overlay" class="hidden fixed inset-0 z-[200] bg-indigo-900 text-white flex flex-col items-center justify-center text-center">
+        <div class="relative w-24 h-24 mb-6">
+            <div class="absolute inset-0 border-4 border-white/20 rounded-full"></div>
+            <div class="absolute inset-0 border-4 border-t-white rounded-full animate-spin"></div>
+            <div class="absolute inset-0 flex items-center justify-center text-4xl">🚀</div>
+        </div>
+        <h2 class="text-2xl font-black mb-2 font-game">جاري الانتقال السريع...</h2>
+        <p class="text-indigo-200 text-sm">لديك اشتراك واحد نشط، جاري توجيهك مباشرة.</p>
+        <button onclick="cancelFastPass()" class="mt-8 px-6 py-2 border border-white/50 rounded-full hover:bg-white/10 transition text-sm">
+            إلغاء والبقاء هنا
+        </button>
+    </div>
+
+    <!-- INFO BANNER (If Fast Pass is cancelled) -->
+    <div id="fast-pass-banner" class="hidden bg-yellow-100 border-b border-yellow-200 text-yellow-800 px-4 py-2 text-center text-xs font-bold relative z-40">
+        ✋ تم إيقاف الانتقال التلقائي مؤقتاً لهذه الجلسة.
+    </div>
 
     <!-- 1. THE HUD (Heads-Up Display) -->
     <nav class="fixed top-0 left-0 right-0 z-50 bg-gray-900 text-white shadow-2xl border-b-4 border-gray-800">
@@ -165,7 +181,7 @@
                         <div class="relative">
                             <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-xl">🎓</div>
                             <select id="select-grade" class="appearance-none w-full bg-gray-50 border-2 border-gray-200 text-gray-800 font-bold py-3 pr-10 pl-4 rounded-xl focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors cursor-pointer">
-                                <option value="" disabled selected>اختر الصف...</option>
+                                <option value="" disabled selected>جاري التحميل...</option>
                             </select>
                             <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400 text-xs">▼</div>
                         </div>
@@ -189,7 +205,7 @@
                         <div class="relative">
                             <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-xl">📚</div>
                             <select id="select-subject" class="appearance-none w-full bg-gray-50 border-2 border-gray-200 text-gray-800 font-bold py-3 pr-10 pl-4 rounded-xl focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors cursor-pointer">
-                                <option value="" disabled selected>اختر المادة...</option>
+                                <option value="" disabled selected>اختر الصف أولاً...</option>
                             </select>
                             <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400 text-xs">▼</div>
                         </div>
@@ -242,15 +258,17 @@
 
     <!-- LOGIC SCRIPT -->
     <script type="module">
-        import { APP_CONFIG, AVATARS, GRADES, TERMS, SUBJECTS } from './config.js';
+        import { APP_CONFIG, AVATARS, GRADES, TERMS, SUBJECTS, GRADE_SUBJECT_MAP } from './config.js';
 
         // 1. SUPABASE SETUP (Via init.js)
+        // Ensure init.js is loaded in the head
         const supabase = window.supabaseClient;
 
         // 2. STATE
         let currentUser = null;
         let leaderboardData = [];
         let currentTab = 'top10';
+        let activeSubscriptions = [];
         const SCORE_WEIGHTS = { star: 10, crystal: 30, gem: 50 };
 
         // 3. INITIALIZATION
@@ -269,7 +287,9 @@
             // B. Render Interface
             renderIdentity();
             await fetchAndRenderStats();
-            initNavigation();
+            
+            // C. Smart Navigation & Fast Pass
+            initSmartNavigation();
         });
 
         // --- HUD FUNCTIONS ---
@@ -324,37 +344,128 @@
             }, stepTime);
         }
 
-        // --- NAVIGATION & WARP LOGIC ---
-        function initNavigation() {
+        // ---------------------------------------------------------
+        // 4. SMART NAVIGATION & FAST PASS LOGIC
+        // ---------------------------------------------------------
+
+        function initSmartNavigation() {
+            // 1. Parse Subscriptions
+            activeSubscriptions = getActiveSubscriptions(currentUser);
+
+            // 2. Check Fast Pass
+            const params = new URLSearchParams(window.location.search);
+            const stayHere = params.get('stay');
+
+            if (activeSubscriptions.length === 1 && !stayHere) {
+                triggerFastPass(activeSubscriptions[0]);
+                return;
+            } else if (stayHere) {
+                document.getElementById('fast-pass-banner').classList.remove('hidden');
+            }
+
+            // 3. Populate Smart Dropdowns
+            populateSmartDropdowns();
+
+            // 4. Show Gate UI
             const gate = document.getElementById('warp-gate');
-            const gradeSelect = document.getElementById('select-grade');
-            const termSelect = document.getElementById('select-term');
-            const subjectSelect = document.getElementById('select-subject');
-
-            GRADES.forEach(g => {
-                const opt = document.createElement('option');
-                opt.value = g.id;
-                opt.innerText = g.name;
-                gradeSelect.appendChild(opt);
-            });
-
-            TERMS.forEach(t => {
-                const opt = document.createElement('option');
-                opt.value = t.id;
-                opt.innerText = t.name;
-                termSelect.appendChild(opt);
-            });
-
-            SUBJECTS.forEach(s => {
-                const opt = document.createElement('option');
-                opt.value = s.id;
-                opt.innerText = s.name;
-                subjectSelect.appendChild(opt);
-            });
-
+            const loading = document.getElementById('loadingState'); // if exists from older version
+            if (loading) loading.remove();
             gate.classList.remove('hidden');
             setTimeout(() => { gate.classList.remove('opacity-0', 'translate-y-10'); }, 50);
         }
+
+        function getActiveSubscriptions(user) {
+            if (!user.subscriptions) return [];
+            const validSubs = [];
+            const now = new Date();
+
+            Object.entries(user.subscriptions).forEach(([key, dateStr]) => {
+                if (new Date(dateStr) < now) return; // Expired
+
+                const gradeObj = GRADES.find(g => key.startsWith(g.id));
+                if (gradeObj) {
+                    const subjectId = key.replace(gradeObj.id + '_', '');
+                    const subjectObj = SUBJECTS.find(s => s.id === subjectId);
+                    if (subjectObj) {
+                        validSubs.push({
+                            gradeId: gradeObj.id,
+                            gradeName: gradeObj.name,
+                            subjectId: subjectObj.id,
+                            subjectName: subjectObj.name
+                        });
+                    }
+                }
+            });
+            return validSubs;
+        }
+
+        function populateSmartDropdowns() {
+            const gradeSelect = document.getElementById('select-grade');
+            const subjectSelect = document.getElementById('select-subject');
+            const termSelect = document.getElementById('select-term');
+
+            TERMS.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t.id; opt.innerText = t.name;
+                termSelect.appendChild(opt);
+            });
+
+            const uniqueGradeIds = [...new Set(activeSubscriptions.map(s => s.gradeId))];
+            
+            if (uniqueGradeIds.length === 0) {
+                gradeSelect.innerHTML = '<option disabled selected>لا توجد اشتراكات نشطة</option>';
+                return;
+            }
+
+            uniqueGradeIds.forEach(gId => {
+                const gradeData = GRADES.find(g => g.id === gId);
+                const opt = document.createElement('option');
+                opt.value = gId; opt.innerText = gradeData.name;
+                gradeSelect.appendChild(opt);
+            });
+
+            gradeSelect.addEventListener('change', () => {
+                const selectedGradeId = gradeSelect.value;
+                subjectSelect.innerHTML = '<option value="" disabled selected>اختر المادة...</option>';
+                
+                const allowedSubs = activeSubscriptions.filter(s => s.gradeId === selectedGradeId);
+                const configAllowed = GRADE_SUBJECT_MAP[selectedGradeId] || [];
+
+                allowedSubs.forEach(sub => {
+                    if (configAllowed.includes(sub.subjectId)) {
+                        const opt = document.createElement('option');
+                        opt.value = sub.subjectId; opt.innerText = sub.subjectName;
+                        subjectSelect.appendChild(opt);
+                    }
+                });
+            });
+
+            if (uniqueGradeIds.length === 1) {
+                gradeSelect.selectedIndex = 0; // The first one after loading? No, appendChild adds after placeholder? 
+                // Correction: The HTML has a placeholder. 
+                // Let's set value directly if only one.
+                gradeSelect.value = uniqueGradeIds[0];
+                gradeSelect.dispatchEvent(new Event('change'));
+            }
+        }
+
+        let fastPassTimeout;
+        function triggerFastPass(sub) {
+            document.getElementById('fast-pass-overlay').classList.remove('hidden');
+            const targetUrl = `warp.html?grade=${sub.gradeId}&subject=${sub.subjectId}&term=term_2`; // Default Term 2
+            fastPassTimeout = setTimeout(() => { window.location.replace(targetUrl); }, 2000);
+        }
+
+        window.cancelFastPass = () => {
+            clearTimeout(fastPassTimeout);
+            document.getElementById('fast-pass-overlay').classList.add('hidden');
+            const url = new URL(window.location);
+            url.searchParams.set('stay', 'true');
+            window.history.pushState({}, '', url);
+            populateSmartDropdowns();
+            const gate = document.getElementById('warp-gate');
+            gate.classList.remove('hidden', 'opacity-0', 'translate-y-10');
+        };
 
         window.attemptWarp = () => {
             const grade = document.getElementById('select-grade').value;
@@ -362,29 +473,14 @@
             const subject = document.getElementById('select-subject').value;
 
             if (!grade || !term || !subject) {
-                alert("يرجى اختيار الصف، الترم، والمادة أولاً! 🧐");
+                alert("يرجى اختيار البيانات كاملة للانطلاق! 🚀");
                 return;
             }
 
-            // Subscription Check logic
-            const subscriptionKey = `${grade}_${subject}`;
-            const expiryDateIso = currentUser.subscriptions ? currentUser.subscriptions[subscriptionKey] : null;
-
-            if (!expiryDateIso) { showLockedModal(); return; }
-
-            const expiryDate = new Date(expiryDateIso);
-            const now = new Date();
-
-            if (expiryDate < now) { showLockedModal(); return; }
-
-            // Success - Redirect
             const params = new URLSearchParams({ grade, term, subject });
             const btn = document.querySelector('button[onclick="attemptWarp()"]');
             btn.innerHTML = `<span class="animate-spin">🌀</span> جاري الانتقال...`;
-            
-            setTimeout(() => {
-                window.location.href = `warp.html?${params.toString()}`;
-            }, 500);
+            setTimeout(() => { window.location.href = `warp.html?${params.toString()}`; }, 500);
         };
 
         window.showLockedModal = () => document.getElementById('locked-modal').classList.remove('hidden');
@@ -393,12 +489,8 @@
         // --- LEADERBOARD LOGIC ---
         window.toggleLeaderboard = async (show) => {
             const modal = document.getElementById('leaderboard-modal');
-            if (show) {
-                modal.classList.remove('hidden');
-                await loadLeaderboard();
-            } else {
-                modal.classList.add('hidden');
-            }
+            if (show) { modal.classList.remove('hidden'); await loadLeaderboard(); } 
+            else { modal.classList.add('hidden'); }
         };
 
         async function loadLeaderboard() {
