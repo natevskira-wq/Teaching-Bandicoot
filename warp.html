@@ -18,9 +18,6 @@
     <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-    <!-- LOAD CONNECTION FROM INIT.JS -->
-    <script src="init.js"></script>
-
     <!-- Tailwind Configuration -->
     <script>
         tailwind.config = {
@@ -38,6 +35,14 @@
                     },
                     animation: {
                         'bounce-slow': 'bounce 3s infinite',
+                        'pop': 'pop 0.5s ease-out forwards',
+                    },
+                    keyframes: {
+                        pop: {
+                            '0%': { transform: 'scale(0)' },
+                            '80%': { transform: 'scale(1.2)' },
+                            '100%': { transform: 'scale(1)' },
+                        }
                     }
                 }
             }
@@ -92,9 +97,8 @@
                 <h1 id="header-title" class="font-game font-bold text-lg md:text-xl text-indigo-900 leading-tight tracking-wide">
                     جاري التحميل...
                 </h1>
-                <span id="header-subtitle" class="text-[10px] md:text-xs font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full mt-0.5">
-                    خريطة المنهج
-                </span>
+                <!-- Term Switcher Area -->
+                <div id="header-subtitle" class="mt-0.5"></div>
             </div>
 
             <!-- Context Icon -->
@@ -121,8 +125,10 @@
     <script type="module">
         import { GRADES, TERMS, SUBJECTS } from './config.js';
 
-        // 1. SUPABASE SETUP (Via init.js)
-        const supabase = window.supabaseClient;
+        // 1. SUPABASE SETUP
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+        const SUPABASE_KEY = 'YOUR_SUPABASE_KEY';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         // --- STATE ---
         const state = { grade: null, term: null, subject: null };
@@ -177,28 +183,57 @@
             return true;
         }
 
-        // HEADER
+        // ------------------------------------------
+        // HEADER RENDERER & TERM SWITCHER
+        // ------------------------------------------
         function renderHeader() {
             const titleEl = document.getElementById('header-title');
             const subtitleEl = document.getElementById('header-subtitle');
             const iconEl = document.getElementById('subject-icon');
 
+            // 1. Set Title & Icon
             titleEl.innerText = `${state.subject.name} - ${state.grade.short_name || state.grade.name}`;
-            subtitleEl.innerText = state.term.name;
-
-            let iconClass = 'fa-book-open';
-            if (state.subject.id.includes('math')) iconClass = 'fa-calculator';
-            else if (state.subject.id.includes('science') || state.subject.id.includes('physics')) iconClass = 'fa-flask';
-            else if (state.subject.id.includes('history')) iconClass = 'fa-landmark';
-            else if (state.subject.id.includes('geo')) iconClass = 'fa-earth-africa';
             
+            // 2. Dynamic Icon Mapping
+            let iconClass = 'fa-book-open';
+            const sId = state.subject.id;
+            if (sId.includes('math')) iconClass = 'fa-calculator';
+            else if (sId.includes('science') || sId.includes('physics')) iconClass = 'fa-flask';
+            else if (sId.includes('history')) iconClass = 'fa-landmark';
+            else if (sId.includes('geo')) iconClass = 'fa-earth-africa';
             iconEl.className = `fa-solid ${iconClass}`;
+
+            // 3. TERM SWITCHER
+            subtitleEl.innerHTML = ''; // Clear previous text
+            
+            const select = document.createElement('select');
+            select.className = "bg-gray-100 text-gray-600 text-[10px] md:text-xs font-bold px-2 py-1 rounded-full border-none outline-none focus:ring-2 focus:ring-sky-300 cursor-pointer";
+            
+            TERMS.forEach(t => {
+                const option = document.createElement('option');
+                option.value = t.id;
+                option.innerText = t.name; // e.g. "Term 1"
+                if (t.id === state.term.id) option.selected = true;
+                select.appendChild(option);
+            });
+
+            // Handle Switch
+            select.addEventListener('change', (e) => {
+                const newTermId = e.target.value;
+                const currentUrl = new URL(window.location);
+                currentUrl.searchParams.set('term', newTermId);
+                window.location.href = currentUrl.toString(); // Reload page
+            });
+
+            subtitleEl.appendChild(select);
         }
 
-        // DATA LOADING
+        // ------------------------------------------
+        // DATA FETCHING ENGINE
+        // ------------------------------------------
         async function loadMapData() {
             try {
-                // Fetch Lessons
+                // 1. Fetch Lessons
                 const { data: lessons, error: lErr } = await supabase
                     .from('tb_lessons')
                     .select('id, title, type, order_index')
@@ -218,7 +253,7 @@
                     return;
                 }
 
-                // Fetch Progress
+                // 2. Fetch Progress
                 const lessonIds = lessons.map(l => l.id);
                 const { data: progress, error: pErr } = await supabase
                     .from('tb_progress')
@@ -228,7 +263,7 @@
 
                 if (pErr) throw pErr;
 
-                // Merge
+                // 3. Merge
                 mapNodes = lessons.map(lesson => {
                     const p = progress.find(row => row.lesson_id === lesson.id);
                     return {
@@ -243,7 +278,7 @@
                     };
                 });
 
-                // Render Map
+                // 4. Render
                 renderMap(mapNodes);
 
             } catch (err) {
@@ -256,50 +291,80 @@
             }
         }
 
-        // MAP RENDERING
+        // ------------------------------------------
+        // MAP RENDERING ENGINE (Visuals V2)
+        // ------------------------------------------
         function renderMap(nodes) {
             const container = document.getElementById('map-container');
             container.innerHTML = ''; 
 
             const mapWrapper = document.createElement('div');
-            mapWrapper.className = 'relative flex flex-col items-center gap-12 py-10 w-full max-w-md';
+            mapWrapper.className = 'relative flex flex-col items-center gap-14 py-10 w-full max-w-md'; 
 
             // Connector Line
             const line = document.createElement('div');
             line.className = 'absolute top-4 bottom-10 left-1/2 -translate-x-1/2 w-3 bg-gray-200 border-x-2 border-gray-300 rounded-full -z-10 connector-line';
             mapWrapper.appendChild(line);
 
+            // State Trackers
             let isPathUnlocked = true; 
+            let nextGoalIdentified = false; // Flag to find the first playable node
+            let allLevelsPassed = true;     // Flag for Trophy
 
             nodes.forEach((node, index) => {
+                // Logic Status
                 const isLocked = !isPathUnlocked;
                 const isCompleted = node.stats.score >= 50;
-                const isCurrentLevel = !isLocked && !isCompleted;
+                const isMastered = node.stats.score >= 90; // Mastery Threshold
+                
+                // "Next Goal" is the FIRST node that is unlocked but NOT completed
+                const isNextGoal = !isLocked && !isCompleted && !nextGoalIdentified;
+                if (isNextGoal) nextGoalIdentified = true;
 
-                // 1. GET SKINS (Using Asset Manager)
+                // Check if path logic fails (used for Trophy later)
+                if (!isCompleted) allLevelsPassed = false;
+
+                // --- RENDER NODE ---
+                
+                // 1. Skins
                 const visuals = getNodeVisuals(node.type, isLocked);
+                const offsetClass = index % 2 === 0 ? '-translate-x-8' : 'translate-x-8'; // Zig-Zag
 
-                // 2. Zig-Zag Offset
-                const offsetClass = index % 2 === 0 ? '-translate-x-8' : 'translate-x-8';
-
-                // 3. Animation Logic
-                let finalClass = visuals.cssClass;
-                if (isCurrentLevel) {
-                    finalClass += ' animate-bounce-slow ring-4 ring-yellow-400 ring-offset-2';
-                }
-
-                // 4. Create Button
+                // 2. Base Button
                 const btn = document.createElement('button');
                 btn.onclick = (e) => handleNodeClick(e, node.id, isLocked);
-                btn.className = `${finalClass} ${offsetClass}`;
+                
+                // Animation: Pulse if it's the next goal
+                let animationClass = isNextGoal ? 'animate-bounce-slow ring-4 ring-yellow-400 ring-offset-2' : '';
+                
+                btn.className = `${visuals.cssClass} ${offsetClass} ${animationClass}`;
                 btn.innerHTML = visuals.iconHTML;
 
-                // 5. Add Rewards (Using Badge Manager)
-                if (isCompleted) {
-                    // Reward Badge
+                // 3. FEATURE A: MASTERY CHECKMARK (Score >= 90)
+                if (isMastered) {
+                    const checkmark = document.createElement('div');
+                    checkmark.className = "absolute -top-2 -right-2 bg-green-500 text-white rounded-full w-7 h-7 flex items-center justify-center border-2 border-white z-30 shadow-sm animate-pop";
+                    checkmark.innerHTML = '<i class="fa-solid fa-check text-sm font-bold"></i>';
+                    btn.appendChild(checkmark);
+                }
+                // Fallback: Normal Rewards (Stars/Gems) if completed but not mastered (or displayed alongside)
+                else if (isCompleted) {
                     btn.innerHTML += getRewardBadge(node.type, node.stats);
-                    
-                    // Score Label
+                }
+
+                // 4. FEATURE B: NEXT GOAL POINTER (👇)
+                if (isNextGoal) {
+                    const pointer = document.createElement('div');
+                    pointer.className = "absolute -top-14 left-1/2 -translate-x-1/2 flex flex-col items-center z-40 animate-bounce";
+                    pointer.innerHTML = `
+                        <span class="bg-yellow-400 text-yellow-900 text-[10px] font-black px-2 py-1 rounded shadow-sm mb-1 whitespace-nowrap">العب هنا!</span>
+                        <span class="text-4xl filter drop-shadow-md">👇</span>
+                    `;
+                    btn.appendChild(pointer);
+                }
+
+                // 5. Score Label
+                if (isCompleted) {
                     const scoreLabel = document.createElement('div');
                     scoreLabel.className = "absolute -bottom-8 left-1/2 -translate-x-1/2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-full font-bold whitespace-nowrap backdrop-blur-sm";
                     scoreLabel.innerText = `%${node.stats.score}`;
@@ -308,20 +373,34 @@
 
                 // 6. Title Label
                 const titleLabel = document.createElement('div');
-                titleLabel.className = "absolute -bottom-6 translate-y-full w-40 text-center text-xs font-bold text-gray-600 leading-tight bg-white/80 px-1 rounded shadow-sm";
+                titleLabel.className = "absolute -bottom-6 translate-y-full w-40 text-center text-xs font-bold text-gray-600 leading-tight bg-white/80 px-1 rounded shadow-sm backdrop-blur-sm";
                 if (isCompleted) titleLabel.classList.add("mt-4");
                 titleLabel.innerText = node.title;
                 btn.appendChild(titleLabel);
 
                 mapWrapper.appendChild(btn);
 
-                // Update Progression
+                // Update Progression for next iteration
                 if (node.stats.score < 50) {
                     isPathUnlocked = false;
                 }
             });
 
+            // 7. FEATURE C: PATH COMPLETED CELEBRATION
+            if (nodes.length > 0 && allLevelsPassed) {
+                const trophy = document.createElement('div');
+                trophy.className = "mt-8 flex flex-col items-center animate-pulse text-center";
+                trophy.innerHTML = `
+                    <div class="text-6xl filter drop-shadow-lg mb-2">🏆</div>
+                    <h3 class="font-black text-yellow-600 text-lg font-game">أنت بطل هذا الترم!</h3>
+                    <p class="text-xs text-gray-400 font-bold">لقد أتممت جميع المراحل بنجاح</p>
+                `;
+                mapWrapper.appendChild(trophy);
+            }
+
             container.appendChild(mapWrapper);
+            
+            // Spacer
             const spacer = document.createElement('div');
             spacer.className = "h-20";
             container.appendChild(spacer);
